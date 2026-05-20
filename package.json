@@ -1,0 +1,18 @@
+{
+  "name": "stylecut",
+  "version": "1.0.0",
+  "private": true,
+  "description": "PERN stack salon website with services, products, pricing, and appointment booking.",
+  "scripts": {
+    "dev": "concurrently \"npm run dev --prefix server\" \"npm run dev --prefix client\"",
+    "dev:client": "npm run dev --prefix client",
+    "dev:server": "npm run dev --prefix server",
+    "stop:ports": "kill-port 5001 5173 5174",
+    "install:all": "npm install && npm install --prefix server && npm install --prefix client",
+    "start": "npm start --prefix server"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "kill-port": "^2.0.1"
+  }
+}
