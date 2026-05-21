@@ -37,6 +37,19 @@ DATABASE_SSL=true
 CLIENT_URLS=http://localhost:5173,http://localhost:5174,http://localhost:5175
 BARBER_STAFF_ID=STYLECUT001
 BARBER_ACCESS_CODE=change-this-access-code
+GOOGLE_CLIENT_ID=your_google_oauth_client_id.apps.googleusercontent.com
+```
+
+Configure the client:
+
+```bash
+cp client/.env.example client/.env
+```
+
+Update `client/.env` with the same Google OAuth web client ID:
+
+```env
+VITE_GOOGLE_CLIENT_ID=your_google_oauth_client_id.apps.googleusercontent.com
 ```
 
 3. Create the database tables and seed data in Neon:
@@ -47,6 +60,12 @@ psql "$DATABASE_URL" -f database/seed.sql
 ```
 
 You can also paste the SQL from `database/schema.sql` and `database/seed.sql` into the Neon SQL editor.
+
+If your auth tables already exist, run the Google auth migration too:
+
+```bash
+psql "$DATABASE_URL" -f database/migrations/005_google_client_auth.sql
+```
 
 4. Install dependencies:
 
@@ -72,6 +91,7 @@ Backend checks:
 ## Authentication
 
 - Client registration and login are stored in Neon through `/api/auth/client/register` and `/api/auth/client/login`.
+- Google client login uses `/api/auth/client/google`. Set `GOOGLE_CLIENT_ID` in the server and `VITE_GOOGLE_CLIENT_ID` in the client.
 - Barber login is stored in Neon through `/api/auth/barber/login`.
 - Set `BARBER_STAFF_ID` and `BARBER_ACCESS_CODE` in `server/.env` before sharing the app.
 

@@ -7,6 +7,10 @@ import { sendWhatsAppNotification } from './whatsapp.js';
 
 const app = express();
 const allowedStatuses = new Set(['pending', 'accepted', 'completed', 'cancelled']);
+const stylists = ['Raghul', 'Chang Lee', 'Jason Makki', 'Vasanth', 'Aalim Hakim'];
+const googleJwksUrl = 'https://www.googleapis.com/oauth2/v3/certs';
+const googleIssuers = new Set(['https://accounts.google.com', 'accounts.google.com']);
+let googleKeyCache = { expiresAt: 0, keys: new Map() };
 
 async function notifyCustomerWhatsApp(phone, email, message) {
   if ((!phone && !email) || !message) {
@@ -120,13 +124,76 @@ app.post('/api/auth/client/login', async (req, res, next) => {
     const result = await query('SELECT * FROM client_users WHERE email = $1', [normalizedEmail]);
     const client = result.rows[0];
 
-    if (!client || !verifyPassword(password, client.password_salt, client.password_hash)) {
+    if (!client || !client.password_salt || !client.password_hash || !verifyPassword(password, client.password_salt, client.password_hash)) {
       return res.status(401).json({ message: 'Invalid email or password.' });
     }
 
     const session = await createSession('client', client.id);
     res.json({ token: session.token, expiresAt: session.expiresAt, profile: clientProfile(client) });
   } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/auth/client/google', async (req, res, next) => {
+  const { credential } = req.body;
+
+  if (!config.googleClientId) {
+    return res.status(500).json({ message: 'Google login is not configured on the server.' });
+  }
+
+  if (!credential) {
+    return res.status(400).json({ message: 'Google credential is required.' });
+  }
+
+  try {
+    const googleProfile = await verifyGoogleCredential(credential);
+
+    if (!googleProfile.email_verified) {
+      return res.status(401).json({ message: 'Google email must be verified.' });
+    }
+
+    const normalizedEmail = normalizeEmail(googleProfile.email);
+    const existingByGoogleId = await query('SELECT * FROM client_users WHERE google_sub = $1', [googleProfile.sub]);
+    let client = existingByGoogleId.rows[0];
+
+    if (!client) {
+      const existingByEmail = await query('SELECT * FROM client_users WHERE email = $1', [normalizedEmail]);
+      client = existingByEmail.rows[0];
+    }
+
+    if (client) {
+      const updated = await query(
+        `
+          UPDATE client_users
+          SET google_sub = COALESCE(google_sub, $1),
+              name = COALESCE(NULLIF(name, ''), $2),
+              avatar_url = COALESCE($3, avatar_url)
+          WHERE id = $4
+          RETURNING *
+        `,
+        [googleProfile.sub, googleProfile.name || normalizedEmail, googleProfile.picture || null, client.id]
+      );
+      client = updated.rows[0];
+    } else {
+      const created = await query(
+        `
+          INSERT INTO client_users (name, email, phone, google_sub, avatar_url)
+          VALUES ($1, $2, $3, $4, $5)
+          RETURNING *
+        `,
+        [googleProfile.name || normalizedEmail, normalizedEmail, '', googleProfile.sub, googleProfile.picture || null]
+      );
+      client = created.rows[0];
+    }
+
+    const session = await createSession('client', client.id);
+    res.json({ token: session.token, expiresAt: session.expiresAt, profile: clientProfile(client) });
+  } catch (error) {
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ message: error.message });
+    }
+
     next(error);
   }
 });
@@ -167,6 +234,133 @@ function hashValue(value) {
   return crypto.createHash('sha256').update(value).digest('hex');
 }
 
+function readBearerToken(req) {
+  const authorization = req.get('authorization') || '';
+  const [scheme, token] = authorization.split(' ');
+  return scheme?.toLowerCase() === 'bearer' ? token : '';
+}
+
+function requireAuth(userType) {
+  return async (req, res, next) => {
+    const token = readBearerToken(req);
+
+    if (!token) {
+      return res.status(401).json({ message: 'Authentication token is required.' });
+    }
+
+    try {
+      const result = await query(
+        `
+          SELECT user_type, user_id
+          FROM auth_sessions
+          WHERE token_hash = $1
+            AND user_type = $2
+            AND expires_at > NOW()
+        `,
+        [hashValue(token), userType]
+      );
+
+      const session = result.rows[0];
+      if (!session) {
+        return res.status(401).json({ message: 'Session is invalid or expired.' });
+      }
+
+      req.auth = session;
+      return next();
+    } catch (error) {
+      return next(error);
+    }
+  };
+}
+
+const requireClient = requireAuth('client');
+const requireBarber = requireAuth('barber');
+
+function decodeBase64UrlJson(value) {
+  return JSON.parse(Buffer.from(value, 'base64url').toString('utf8'));
+}
+
+function googleAuthError(message, statusCode = 401) {
+  const error = new Error(message);
+  error.statusCode = statusCode;
+  return error;
+}
+
+async function fetchGoogleKeys() {
+  const now = Date.now();
+  if (googleKeyCache.expiresAt > now && googleKeyCache.keys.size > 0) {
+    return googleKeyCache.keys;
+  }
+
+  const response = await fetch(googleJwksUrl);
+  if (!response.ok) {
+    throw googleAuthError('Could not verify Google login right now.', 503);
+  }
+
+  const jwks = await response.json();
+  const cacheControl = response.headers.get('cache-control') || '';
+  const maxAgeMatch = cacheControl.match(/max-age=(\d+)/);
+  const maxAgeSeconds = maxAgeMatch ? Number(maxAgeMatch[1]) : 3600;
+  const keys = new Map();
+
+  for (const key of jwks.keys || []) {
+    if (key.kid) {
+      keys.set(key.kid, crypto.createPublicKey({ key, format: 'jwk' }));
+    }
+  }
+
+  googleKeyCache = {
+    expiresAt: now + maxAgeSeconds * 1000,
+    keys
+  };
+
+  return keys;
+}
+
+async function verifyGoogleCredential(credential) {
+  const parts = String(credential).split('.');
+  if (parts.length !== 3) {
+    throw googleAuthError('Invalid Google credential.');
+  }
+
+  const [encodedHeader, encodedPayload, encodedSignature] = parts;
+  const header = decodeBase64UrlJson(encodedHeader);
+  const payload = decodeBase64UrlJson(encodedPayload);
+
+  if (header.alg !== 'RS256' || !header.kid) {
+    throw googleAuthError('Unsupported Google credential.');
+  }
+
+  const keys = await fetchGoogleKeys();
+  const publicKey = keys.get(header.kid);
+  if (!publicKey) {
+    googleKeyCache = { expiresAt: 0, keys: new Map() };
+    throw googleAuthError('Google login key was not recognized.');
+  }
+
+  const isValidSignature = crypto.verify(
+    'RSA-SHA256',
+    Buffer.from(`${encodedHeader}.${encodedPayload}`),
+    publicKey,
+    Buffer.from(encodedSignature, 'base64url')
+  );
+
+  if (!isValidSignature) {
+    throw googleAuthError('Invalid Google credential signature.');
+  }
+
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  if (!googleIssuers.has(payload.iss) || payload.aud !== config.googleClientId || payload.exp <= nowSeconds) {
+    throw googleAuthError('Google credential is not valid for this app.');
+  }
+
+  if (!payload.sub || !payload.email) {
+    throw googleAuthError('Google credential is missing profile details.');
+  }
+
+  return payload;
+}
+
 function hashPassword(password, salt = crypto.randomBytes(16).toString('hex')) {
   const passwordHash = crypto.pbkdf2Sync(String(password), salt, 120000, 64, 'sha512').toString('hex');
   return { passwordHash, salt };
@@ -197,7 +391,8 @@ function clientProfile(row) {
     id: row.id,
     name: row.name,
     email: row.email,
-    phone: row.phone
+    phone: row.phone || '',
+    avatarUrl: row.avatar_url || ''
   };
 }
 
@@ -306,6 +501,10 @@ app.get('/api/services', async (_req, res, next) => {
   }
 });
 
+app.get('/api/stylists', (_req, res) => {
+  res.json(stylists);
+});
+
 app.get('/api/products', async (_req, res, next) => {
   try {
     const result = await query(`
@@ -320,7 +519,7 @@ app.get('/api/products', async (_req, res, next) => {
   }
 });
 
-app.get('/api/appointments', async (_req, res, next) => {
+app.get('/api/appointments', requireBarber, async (_req, res, next) => {
   try {
     const result = await query(`
       SELECT
@@ -344,7 +543,7 @@ app.get('/api/appointments', async (_req, res, next) => {
   }
 });
 
-app.patch('/api/appointments/:id/status', async (req, res, next) => {
+app.patch('/api/appointments/:id/status', requireBarber, async (req, res, next) => {
   const { status } = req.body;
 
   if (!isValidStatus(status)) {
@@ -403,6 +602,7 @@ app.post('/api/appointments', async (req, res, next) => {
     serviceId,
     appointmentDate,
     appointmentTime,
+    preferredBarber,
     notes
   } = req.body;
 
@@ -413,6 +613,11 @@ app.post('/api/appointments', async (req, res, next) => {
   }
 
   try {
+    const appointmentNotes = [
+      preferredBarber ? `Preferred stylist: ${preferredBarber}` : '',
+      notes || ''
+    ].filter(Boolean).join('\n');
+
     const result = await query(
       `
         INSERT INTO appointments (
@@ -434,7 +639,7 @@ app.post('/api/appointments', async (req, res, next) => {
         serviceId,
         appointmentDate,
         appointmentTime,
-        notes || null
+        appointmentNotes || null
       ]
     );
 
@@ -458,7 +663,43 @@ app.post('/api/appointments', async (req, res, next) => {
   }
 });
 
-app.get('/api/product-orders', async (_req, res, next) => {
+app.get('/api/account/appointments', requireClient, async (req, res, next) => {
+  try {
+    const clientResult = await query('SELECT email, phone FROM client_users WHERE id = $1', [req.auth.user_id]);
+    const client = clientResult.rows[0];
+
+    if (!client) {
+      return res.status(404).json({ message: 'Client account not found.' });
+    }
+
+    const result = await query(
+      `
+        SELECT
+          appointments.id,
+          appointments.customer_name,
+          appointments.customer_email,
+          appointments.customer_phone,
+          appointments.appointment_date,
+          appointments.appointment_time,
+          appointments.notes,
+          appointments.status,
+          services.name AS service_name
+        FROM appointments
+        JOIN services ON services.id = appointments.service_id
+        WHERE LOWER(appointments.customer_email) = LOWER($1)
+           OR REGEXP_REPLACE(appointments.customer_phone, '\\D', '', 'g') = REGEXP_REPLACE($2, '\\D', '', 'g')
+        ORDER BY appointments.appointment_date DESC, appointments.appointment_time DESC
+      `,
+      [client.email, client.phone || '']
+    );
+
+    return res.json(result.rows);
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.get('/api/product-orders', requireBarber, async (_req, res, next) => {
   try {
     const result = await query(`
       SELECT
@@ -527,7 +768,7 @@ app.post('/api/product-orders', async (req, res, next) => {
   }
 });
 
-app.patch('/api/product-orders/:id/status', async (req, res, next) => {
+app.patch('/api/product-orders/:id/status', requireBarber, async (req, res, next) => {
   const { status } = req.body;
 
   if (!isValidStatus(status)) {
@@ -615,7 +856,179 @@ app.patch('/api/product-orders/:id/status', async (req, res, next) => {
   }
 });
 
-app.get('/api/bridal-requests', async (_req, res, next) => {
+app.get('/api/account/product-orders', requireClient, async (req, res, next) => {
+  try {
+    const clientResult = await query('SELECT email, phone FROM client_users WHERE id = $1', [req.auth.user_id]);
+    const client = clientResult.rows[0];
+
+    if (!client) {
+      return res.status(404).json({ message: 'Client account not found.' });
+    }
+
+    const result = await query(
+      `
+        SELECT
+          id,
+          customer_name,
+          customer_email,
+          customer_phone,
+          delivery_address,
+          order_notes,
+          items,
+          total_amount,
+          estimated_delivery_date,
+          delivery_estimate_reason,
+          accepted_at,
+          delivered_at,
+          status,
+          created_at
+        FROM product_orders
+        WHERE LOWER(customer_email) = LOWER($1)
+           OR (
+             $2 <> ''
+             AND REGEXP_REPLACE(customer_phone, '\\D', '', 'g') = REGEXP_REPLACE($2, '\\D', '', 'g')
+           )
+        ORDER BY created_at DESC
+      `,
+      [client.email || '', client.phone || '']
+    );
+
+    return res.json(result.rows);
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.get('/api/account/feedback', requireClient, async (req, res, next) => {
+  try {
+    const result = await query(
+      `
+        SELECT id, feedback_text, created_at
+        FROM client_reviews
+        WHERE client_user_id = $1
+          AND feedback_text IS NOT NULL
+        ORDER BY created_at DESC
+      `,
+      [req.auth.user_id]
+    );
+
+    return res.json(result.rows);
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.post('/api/account/feedback', requireClient, async (req, res, next) => {
+  const feedbackText = String(req.body.feedback || '').trim();
+
+  if (!feedbackText) {
+    return res.status(400).json({ message: 'Feedback is required.' });
+  }
+
+  try {
+    const clientResult = await query('SELECT name, email, phone FROM client_users WHERE id = $1', [req.auth.user_id]);
+    const client = clientResult.rows[0];
+
+    if (!client) {
+      return res.status(404).json({ message: 'Client account not found.' });
+    }
+
+    const result = await query(
+      `
+        INSERT INTO client_reviews (client_user_id, client_name, client_email, client_phone, feedback_text)
+        VALUES ($1, $2, $3, $4, $5)
+        RETURNING id, client_name, client_email, client_phone, feedback_text, created_at
+      `,
+      [req.auth.user_id, client.name, client.email, client.phone || null, feedbackText]
+    );
+
+    return res.status(201).json(result.rows[0]);
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.get('/api/account/rating', requireClient, async (req, res, next) => {
+  try {
+    const result = await query(
+      `
+        SELECT id, rating, created_at
+        FROM client_reviews
+        WHERE client_user_id = $1
+          AND rating IS NOT NULL
+        ORDER BY created_at DESC
+        LIMIT 1
+      `,
+      [req.auth.user_id]
+    );
+
+    return res.json(result.rows[0] || null);
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.post('/api/account/rating', requireClient, async (req, res, next) => {
+  const rating = Number(req.body.rating);
+
+  if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
+    return res.status(400).json({ message: 'Rating must be between 1 and 5.' });
+  }
+
+  try {
+    const clientResult = await query('SELECT name, email, phone FROM client_users WHERE id = $1', [req.auth.user_id]);
+    const client = clientResult.rows[0];
+
+    if (!client) {
+      return res.status(404).json({ message: 'Client account not found.' });
+    }
+
+    const result = await query(
+      `
+        INSERT INTO client_reviews (client_user_id, client_name, client_email, client_phone, rating)
+        VALUES ($1, $2, $3, $4, $5)
+        RETURNING id, client_name, client_email, client_phone, rating, created_at
+      `,
+      [req.auth.user_id, client.name, client.email, client.phone || null, rating]
+    );
+
+    return res.status(201).json(result.rows[0]);
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.get('/api/feedback', requireBarber, async (_req, res, next) => {
+  try {
+    const result = await query(`
+      SELECT id, client_name, client_email, client_phone, feedback_text, created_at
+      FROM client_reviews
+      WHERE feedback_text IS NOT NULL
+      ORDER BY created_at DESC
+    `);
+
+    return res.json(result.rows);
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.get('/api/ratings', requireBarber, async (_req, res, next) => {
+  try {
+    const result = await query(`
+      SELECT id, client_name, client_email, client_phone, rating, created_at
+      FROM client_reviews
+      WHERE rating IS NOT NULL
+      ORDER BY created_at DESC
+    `);
+
+    return res.json(result.rows);
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.get('/api/bridal-requests', requireBarber, async (_req, res, next) => {
   try {
     const result = await query(`
       SELECT *
@@ -685,7 +1098,7 @@ app.post('/api/bridal-requests', async (req, res, next) => {
   }
 });
 
-app.patch('/api/bridal-requests/:id/status', async (req, res, next) => {
+app.patch('/api/bridal-requests/:id/status', requireBarber, async (req, res, next) => {
   const { status } = req.body;
 
   if (!isValidStatus(status)) {

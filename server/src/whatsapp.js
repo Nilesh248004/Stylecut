@@ -3,17 +3,28 @@ import { config } from './config.js';
 const notificationMode = config.notificationMode || 'mock'; // 'mock' | 'email' | 'twilio' | 'meta'
 
 function normalizeWhatsappPhone(phone) {
-  const digits = String(phone || '').replace(/[^0-9+]/g, '');
+  const rawPhone = String(phone || '').trim();
+  if (rawPhone.startsWith('whatsapp:')) {
+    return rawPhone;
+  }
+
+  const digits = rawPhone.replace(/\D/g, '');
   if (!digits) {
     return '';
   }
 
-  if (digits.startsWith('whatsapp:')) {
-    return digits;
+  const normalizedDigits = digits.length === 10 ? `91${digits}` : digits.replace(/^0+/, '');
+  const cleaned = rawPhone.startsWith('+') ? `+${digits}` : `+${normalizedDigits}`;
+  return `whatsapp:${cleaned}`;
+}
+
+function normalizeMetaWhatsappPhone(phone) {
+  const digits = String(phone || '').replace(/\D/g, '');
+  if (!digits) {
+    return '';
   }
 
-  const cleaned = digits.startsWith('+') ? digits : `+${digits.replace(/^0+/, '')}`;
-  return `whatsapp:${cleaned}`;
+  return digits.length === 10 ? `91${digits}` : digits.replace(/^0+/, '');
 }
 
 // Mock notification (FREE - development/testing)
@@ -109,13 +120,13 @@ async function sendMetaNotification(toPhone, message) {
     return null;
   }
 
-  const phone = String(toPhone || '').replace(/[^0-9]/g, '');
+  const phone = normalizeMetaWhatsappPhone(toPhone);
   if (!phone) {
     throw new Error('Invalid phone number for WhatsApp notification.');
   }
 
   const response = await fetch(
-    `https://graph.instagram.com/v18.0/${config.metaPhoneNumberId}/messages`,
+    `https://graph.facebook.com/v18.0/${config.metaPhoneNumberId}/messages`,
     {
       method: 'POST',
       headers: {

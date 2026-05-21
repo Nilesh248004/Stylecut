@@ -61,15 +61,15 @@ function Homepage() {
           <address className="footer-details">
             <span>
               <MapPin size={18} />
-              MG Road, Bengaluru, Karnataka
+              Ooty - Kotagiri Main Road, near Co-operative Bank, Kattabettu, The Nilgiris, 643214
             </span>
-            <a href="tel:+919876543210">
+            <a href="tel:+919585880053">
               <Phone size={18} />
-              +91 98765 43210
+              +91 95858 80053
             </a>
-            <a href="mailto:contact@stylecut.com">
+            <a href="mailto:stylecutofficial@gmail.com">
               <Mail size={18} />
-              contact@stylecut.com
+              stylecutofficial@gmail.com
             </a>
           </address>
         </div>

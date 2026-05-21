@@ -1,6 +1,8 @@
 import { ArrowRight, Lock, Mail, Phone, Scissors, UserRound } from 'lucide-react';
-import { useState } from 'react';
-import { loginClient, registerClient } from './api';
+import { useEffect, useRef, useState } from 'react';
+import { loginClient, loginClientWithGoogle, registerClient } from './api';
+
+const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 
 function ClientAuth() {
   const [mode, setMode] = useState('login');
@@ -12,6 +14,93 @@ function ClientAuth() {
   });
   const [message, setMessage] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const googleButtonRef = useRef(null);
+
+  function completeClientLogin(result) {
+    window.localStorage.setItem('stylecut_client_auth', 'true');
+    window.localStorage.setItem('stylecut_client_token', result.token);
+    window.localStorage.setItem('stylecut_client_profile', JSON.stringify(result.profile));
+    window.location.hash = '#/home';
+  }
+
+  useEffect(() => {
+    if (!GOOGLE_CLIENT_ID) {
+      return undefined;
+    }
+
+    let isMounted = true;
+
+    async function handleGoogleResponse(response) {
+      if (!response?.credential) {
+        setMessage('Google login did not return a credential.');
+        return;
+      }
+
+      setIsSubmitting(true);
+      setMessage('');
+
+      try {
+        const result = await loginClientWithGoogle({ credential: response.credential });
+        completeClientLogin(result);
+      } catch (error) {
+        if (isMounted) {
+          setMessage(error.message || 'Google login failed.');
+        }
+      } finally {
+        if (isMounted) {
+          setIsSubmitting(false);
+        }
+      }
+    }
+
+    function renderGoogleButton() {
+      if (!isMounted || !window.google?.accounts?.id || !googleButtonRef.current) {
+        return;
+      }
+
+      window.google.accounts.id.initialize({
+        client_id: GOOGLE_CLIENT_ID,
+        callback: handleGoogleResponse
+      });
+
+      window.google.accounts.id.renderButton(googleButtonRef.current, {
+        theme: 'outline',
+        size: 'large',
+        shape: 'rectangular',
+        text: mode === 'register' ? 'signup_with' : 'signin_with',
+        width: googleButtonRef.current.offsetWidth || 360
+      });
+    }
+
+    const existingScript = document.querySelector('script[src="https://accounts.google.com/gsi/client"]');
+    if (existingScript) {
+      if (window.google?.accounts?.id) {
+        renderGoogleButton();
+      } else {
+        existingScript.addEventListener('load', renderGoogleButton, { once: true });
+      }
+    } else {
+      const script = document.createElement('script');
+      script.src = 'https://accounts.google.com/gsi/client';
+      script.async = true;
+      script.defer = true;
+      script.onload = renderGoogleButton;
+      script.onerror = () => {
+        if (isMounted) {
+          setMessage('Google login could not be loaded.');
+        }
+      };
+      document.head.appendChild(script);
+    }
+
+    return () => {
+      isMounted = false;
+      existingScript?.removeEventListener('load', renderGoogleButton);
+      if (googleButtonRef.current) {
+        googleButtonRef.current.innerHTML = '';
+      }
+    };
+  }, [mode]);
 
   function handleChange(event) {
     const { name, value } = event.target;
@@ -47,10 +136,7 @@ function ClientAuth() {
             password: form.password
           });
 
-      window.localStorage.setItem('stylecut_client_auth', 'true');
-      window.localStorage.setItem('stylecut_client_token', result.token);
-      window.localStorage.setItem('stylecut_client_profile', JSON.stringify(result.profile));
-      window.location.hash = '#/home';
+      completeClientLogin(result);
     } catch (error) {
       setMessage(error.message || 'Authentication failed.');
     } finally {
@@ -160,6 +246,16 @@ function ClientAuth() {
               {isSubmitting ? 'Please wait...' : mode === 'login' ? 'Login as Client' : 'Register Client'}
               <ArrowRight size={19} />
             </button>
+
+            <div className="auth-divider">
+              <span>or</span>
+            </div>
+
+            {GOOGLE_CLIENT_ID ? (
+              <div className="google-login-shell" ref={googleButtonRef} aria-label="Google login" />
+            ) : (
+              <p className="auth-message">Add VITE_GOOGLE_CLIENT_ID to enable Google login.</p>
+            )}
           </form>
         </div>
       </section>

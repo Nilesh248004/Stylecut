@@ -67,13 +67,73 @@ function currency(value) {
   });
 }
 
+const productCartStorageKey = 'stylecut_product_cart';
+
+function readSavedCartItems() {
+  try {
+    const savedCart = JSON.parse(window.localStorage.getItem(productCartStorageKey)) || {};
+    return Object.fromEntries(
+      Object.entries(savedCart)
+        .map(([productId, quantity]) => [productId, Number(quantity)])
+        .filter(([, quantity]) => Number.isFinite(quantity) && quantity > 0)
+    );
+  } catch {
+    return {};
+  }
+}
+
+function cartItemCount(items) {
+  return Object.values(items).reduce((total, quantity) => total + Number(quantity || 0), 0);
+}
+
+function playCartDropSound() {
+  const AudioContext = window.AudioContext || window.webkitAudioContext;
+
+  if (!AudioContext) {
+    return;
+  }
+
+  const audioContext = new AudioContext();
+  const masterGain = audioContext.createGain();
+  masterGain.connect(audioContext.destination);
+  masterGain.gain.setValueAtTime(0.0001, audioContext.currentTime);
+  masterGain.gain.exponentialRampToValueAtTime(0.85, audioContext.currentTime + 0.01);
+  masterGain.gain.exponentialRampToValueAtTime(0.0001, audioContext.currentTime + 0.55);
+
+  const thud = audioContext.createOscillator();
+  const thudGain = audioContext.createGain();
+  thud.type = 'square';
+  thud.frequency.setValueAtTime(170, audioContext.currentTime);
+  thud.frequency.exponentialRampToValueAtTime(54, audioContext.currentTime + 0.18);
+  thudGain.gain.setValueAtTime(0.55, audioContext.currentTime);
+  thudGain.gain.exponentialRampToValueAtTime(0.0001, audioContext.currentTime + 0.24);
+  thud.connect(thudGain).connect(masterGain);
+  thud.start(audioContext.currentTime);
+  thud.stop(audioContext.currentTime + 0.26);
+
+  [820, 1120, 1480].forEach((frequency, index) => {
+    const clink = audioContext.createOscillator();
+    const clinkGain = audioContext.createGain();
+    const startTime = audioContext.currentTime + 0.07 + index * 0.055;
+
+    clink.type = 'square';
+    clink.frequency.setValueAtTime(frequency, startTime);
+    clinkGain.gain.setValueAtTime(0.0001, startTime);
+    clinkGain.gain.exponentialRampToValueAtTime(0.2, startTime + 0.01);
+    clinkGain.gain.exponentialRampToValueAtTime(0.0001, startTime + 0.2);
+    clink.connect(clinkGain).connect(masterGain);
+    clink.start(startTime);
+    clink.stop(startTime + 0.22);
+  });
+}
+
 function Products() {
   const [products, setProducts] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState('All');
-  const [cartCount, setCartCount] = useState(0);
-  const [cartItems, setCartItems] = useState({}); // { productId: quantity }
+  const [cartItems, setCartItems] = useState(readSavedCartItems); // { productId: quantity }
   const [addedProduct, setAddedProduct] = useState(null); // { id, name, quantity }
   const [cartOpen, setCartOpen] = useState(false);
+  const cartCount = useMemo(() => cartItemCount(cartItems), [cartItems]);
 
   const cartProducts = useMemo(() => {
     return Object.entries(cartItems).map(([productId, quantity]) => {
@@ -110,6 +170,21 @@ function Products() {
     window.location.hash = '#/product-checkout';
   };
 
+  const handleAddToCart = (product) => {
+    const nextQuantity = (cartItems[product.id] || 0) + 1;
+
+    playCartDropSound();
+    setCartItems((prevItems) => ({
+      ...prevItems,
+      [product.id]: (prevItems[product.id] || 0) + 1
+    }));
+    setAddedProduct({
+      id: product.id,
+      name: product.name,
+      quantity: nextQuantity
+    });
+  };
+
   useEffect(() => {
     async function loadProducts() {
       try {
@@ -121,6 +196,10 @@ function Products() {
 
     loadProducts();
   }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem(productCartStorageKey, JSON.stringify(cartItems));
+  }, [cartItems]);
 
   useEffect(() => {
     if (addedProduct) {
@@ -269,14 +348,12 @@ function Products() {
                         onClick={() => {
                           const newQuantity = cartItems[product.id] - 1;
                           if (newQuantity === 0) {
-                            setCartCount((currentCount) => currentCount - 1);
                             setCartItems((prevItems) => {
                               const updated = { ...prevItems };
                               delete updated[product.id];
                               return updated;
                             });
                           } else {
-                            setCartCount((currentCount) => currentCount - 1);
                             setCartItems((prevItems) => ({
                               ...prevItems,
                               [product.id]: newQuantity
@@ -292,18 +369,7 @@ function Products() {
                       <button
                         className="quantity-btn quantity-btn-plus"
                         type="button"
-                        onClick={() => {
-                          setCartCount((currentCount) => currentCount + 1);
-                          setCartItems((prevItems) => ({
-                            ...prevItems,
-                            [product.id]: (prevItems[product.id] || 0) + 1
-                          }));
-                          setAddedProduct({
-                            id: product.id,
-                            name: product.name,
-                            quantity: cartItems[product.id] + 1
-                          });
-                        }}
+                        onClick={() => handleAddToCart(product)}
                       >
                         <Plus size={18} />
                       </button>
@@ -321,18 +387,7 @@ function Products() {
                     <button
                       className="add-product-button"
                       type="button"
-                      onClick={() => {
-                        setCartCount((currentCount) => currentCount + 1);
-                        setCartItems((prevItems) => ({
-                          ...prevItems,
-                          [product.id]: (prevItems[product.id] || 0) + 1
-                        }));
-                        setAddedProduct({
-                          id: product.id,
-                          name: product.name,
-                          quantity: (cartItems[product.id] || 0) + 1
-                        });
-                      }}
+                      onClick={() => handleAddToCart(product)}
                     >
                       <ShoppingBag size={18} />
                       Add to Cart

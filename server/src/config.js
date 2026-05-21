@@ -18,6 +18,7 @@ export const config = {
   databaseUrl: process.env.DATABASE_URL?.trim(),
   databaseSsl: process.env.DATABASE_SSL !== 'false',
   clientOrigins: splitCsv(process.env.CLIENT_URLS || process.env.CLIENT_URL || 'http://localhost:5173'),
+  googleClientId: process.env.GOOGLE_CLIENT_ID || '',
   barberStaffId: process.env.BARBER_STAFF_ID || 'STYLECUT001',
   barberAccessCode: process.env.BARBER_ACCESS_CODE || '123456',
   notificationMode: process.env.NOTIFICATION_MODE || 'mock',

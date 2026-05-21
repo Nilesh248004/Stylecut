@@ -1,6 +1,7 @@
-import { CalendarDays, CheckCircle2, Clock, Mail, Phone, User, UserCheck } from 'lucide-react';
+import { CalendarDays, CheckCircle2, ChevronDown, Clock, Mail, Phone, User, UserCheck } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import { createAppointment, getServices } from './api';
+import { createAppointment, getServices, getStylists } from './api';
+import { playSuccessNoticeSound } from './sounds';
 
 const fallbackServices = [
   {
@@ -83,59 +84,34 @@ function formatDisplayDate(dateValue) {
   return `${day}-${month}-${year}`;
 }
 
-function playSuccessSound() {
-  const AudioContext = window.AudioContext || window.webkitAudioContext;
-
-  if (!AudioContext) {
-    return;
-  }
-
-  const audioContext = new AudioContext();
-  const gain = audioContext.createGain();
-
-  gain.connect(audioContext.destination);
-  gain.gain.setValueAtTime(0.0001, audioContext.currentTime);
-  gain.gain.exponentialRampToValueAtTime(0.18, audioContext.currentTime + 0.02);
-  gain.gain.exponentialRampToValueAtTime(0.0001, audioContext.currentTime + 0.58);
-
-  [523.25, 659.25, 783.99].forEach((frequency, index) => {
-    const oscillator = audioContext.createOscillator();
-    oscillator.type = 'sine';
-    oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime + index * 0.08);
-    oscillator.connect(gain);
-    oscillator.start(audioContext.currentTime + index * 0.08);
-    oscillator.stop(audioContext.currentTime + 0.58);
-  });
-}
-
-const barbers = ['Rahul', 'Aditi', 'Meera'];
+const fallbackStylists = ['Raghul', 'Chang Lee', 'Jason Makki', 'Vasanth', 'Aalim Hakim'];
 const timeSlots = ['10:00 AM', '11:30 AM', '01:00 PM', '02:30 PM', '04:00 PM'];
 const bookedSlots = {
   '2026-05-21': {
-    Rahul: ['10:00 AM', '04:00 PM'],
-    Aditi: ['11:30 AM'],
-    Meera: ['02:30 PM']
+    Raghul: ['10:00 AM', '04:00 PM'],
+    'Chang Lee': ['11:30 AM'],
+    'Jason Makki': ['02:30 PM']
   },
   '2026-05-22': {
-    Rahul: ['01:00 PM'],
-    Aditi: ['10:00 AM', '02:30 PM'],
-    Meera: ['11:30 AM']
+    Raghul: ['01:00 PM'],
+    Vasanth: ['10:00 AM', '02:30 PM'],
+    'Aalim Hakim': ['11:30 AM']
   }
 };
 
 function Book({ serviceId }) {
   const [services, setServices] = useState([]);
+  const [stylists, setStylists] = useState(fallbackStylists);
   const [selectedServiceId, setSelectedServiceId] = useState(serviceId || '');
   const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [selectedTime, setSelectedTime] = useState(timeSlots[0]);
-  const [selectedBarber, setSelectedBarber] = useState(barbers[0]);
+  const [selectedBarber, setSelectedBarber] = useState(fallbackStylists[0]);
   const [customerName, setCustomerName] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
-  const [notes, setNotes] = useState('');
-  const [availability, setAvailability] = useState(null);
   const [confirmation, setConfirmation] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isStylistMenuOpen, setIsStylistMenuOpen] = useState(false);
 
   useEffect(() => {
     async function loadServices() {
@@ -152,34 +128,64 @@ function Book({ serviceId }) {
     loadServices();
   }, []);
 
+  useEffect(() => {
+    async function loadStylists() {
+      try {
+        const stylistData = await getStylists();
+        const nextStylists = stylistData.length ? stylistData : fallbackStylists;
+        setStylists(nextStylists);
+        setSelectedBarber((current) => nextStylists.includes(current) ? current : nextStylists[0]);
+      } catch {
+        setStylists(fallbackStylists);
+        setSelectedBarber((current) => fallbackStylists.includes(current) ? current : fallbackStylists[0]);
+      }
+    }
+
+    loadStylists();
+  }, []);
+
   const service = useMemo(() => {
     return services.find((item) => item.id === Number(selectedServiceId));
   }, [services, selectedServiceId]);
 
+  const stylistAvailability = useMemo(() => {
+    const bookedForDate = bookedSlots[selectedDate] || {};
+
+    return stylists.map((stylist) => {
+      const isAvailable = !(bookedForDate[stylist] || []).includes(selectedTime);
+      return {
+        name: stylist,
+        status: isAvailable ? 'available' : 'at-work',
+        label: isAvailable ? 'Available' : 'At work'
+      };
+    });
+  }, [selectedDate, selectedTime, stylists]);
+
+  const selectedStylistStatus = stylistAvailability.find((stylist) => stylist.name === selectedBarber);
   const isBookingConfirmed = confirmation?.status === 'confirmed';
 
-  const handleCheckAvailability = () => {
-    const bookedForDate = bookedSlots[selectedDate] || {};
-    const barberSchedule = bookedForDate[selectedBarber] || [];
-    const isAvailable = !barberSchedule.includes(selectedTime);
+  useEffect(() => {
+    const selectedIsAvailable = selectedStylistStatus?.status === 'available';
+    const firstAvailableStylist = stylistAvailability.find((stylist) => stylist.status === 'available');
 
-    setAvailability({
-      status: isAvailable ? 'available' : 'unavailable',
-      message: isAvailable
-        ? `${selectedBarber} is available on ${selectedDate} at ${selectedTime}.`
-        : `${selectedBarber} is already booked on ${selectedDate} at ${selectedTime}. Choose another slot.`
-    });
+    if (!selectedIsAvailable && firstAvailableStylist) {
+      setSelectedBarber(firstAvailableStylist.name);
+    }
+  }, [selectedBarber, selectedStylistStatus, stylistAvailability]);
+
+  const handleStylistSelect = (stylist) => {
+    if (stylist.status !== 'available') {
+      return;
+    }
+
+    setSelectedBarber(stylist.name);
+    setIsStylistMenuOpen(false);
     setConfirmation(null);
   };
 
   const handleConfirmBooking = async () => {
-    if (!availability) {
-      setConfirmation({ status: 'error', message: 'Please check availability first.' });
-      return;
-    }
-
-    if (availability.status !== 'available') {
-      setConfirmation({ status: 'error', message: 'Selected slot is not available. Please choose a different time or barber.' });
+    if (selectedStylistStatus?.status !== 'available') {
+      setConfirmation({ status: 'error', message: 'Selected stylist is at work. Please choose an available stylist.' });
       return;
     }
 
@@ -198,20 +204,20 @@ function Book({ serviceId }) {
         serviceId: service.id,
         appointmentDate: selectedDate,
         appointmentTime: toApiTime(selectedTime),
-        notes: notes || `Preferred barber: ${selectedBarber}`
+        preferredBarber: selectedBarber
       });
 
       setConfirmation({
         status: 'confirmed',
         message: `Your booking for ${service.name} with ${selectedBarber} on ${selectedDate} at ${selectedTime} is confirmed.`
       });
-      playSuccessSound();
+      playSuccessNoticeSound();
     } catch {
       setConfirmation({
         status: 'confirmed',
         message: `Your booking request for ${service.name} with ${selectedBarber} on ${selectedDate} at ${selectedTime} is ready.`
       });
-      playSuccessSound();
+      playSuccessNoticeSound();
     } finally {
       setIsSubmitting(false);
     }
@@ -255,7 +261,7 @@ function Book({ serviceId }) {
             <Clock size={18} /> {service.duration_minutes} min
           </span>
           <span>
-            <UserCheck size={18} /> Select time, barber, and confirm availability
+            <UserCheck size={18} /> Select time, stylist, and confirm availability
           </span>
           <span>
             <strong>{currency(service.min_price)}</strong> - {currency(service.max_price)}
@@ -277,7 +283,6 @@ function Book({ serviceId }) {
                 value={selectedServiceId}
                 onChange={(event) => {
                   setSelectedServiceId(event.target.value);
-                  setAvailability(null);
                   setConfirmation(null);
                 }}
               >
@@ -296,7 +301,6 @@ function Book({ serviceId }) {
                 value={selectedDate}
                 onChange={(event) => {
                   setSelectedDate(event.target.value);
-                  setAvailability(null);
                   setConfirmation(null);
                 }}
                 min={new Date().toISOString().split('T')[0]}
@@ -339,52 +343,60 @@ function Book({ serviceId }) {
               />
             </label>
 
-            <label className="booking-field">
-              <span>Notes</span>
-              <textarea
-                value={notes}
-                onChange={(event) => setNotes(event.target.value)}
-                placeholder="Any preference or special request"
-                rows="4"
-              />
-            </label>
+            <div className="booking-schedule-grid">
+              <label className="booking-field">
+                <span>Time</span>
+                <select
+                  value={selectedTime}
+                  onChange={(event) => {
+                    setSelectedTime(event.target.value);
+                    setIsStylistMenuOpen(false);
+                    setConfirmation(null);
+                  }}
+                >
+                  {timeSlots.map((time) => (
+                    <option key={time} value={time}>{time}</option>
+                  ))}
+                </select>
+              </label>
 
-            <label className="booking-field">
-              <span>Time</span>
-              <select
-                value={selectedTime}
-                onChange={(event) => {
-                  setSelectedTime(event.target.value);
-                  setAvailability(null);
-                  setConfirmation(null);
-                }}
-              >
-                {timeSlots.map((time) => (
-                  <option key={time} value={time}>{time}</option>
-                ))}
-              </select>
-            </label>
+              <div className="booking-field">
+                <span>Stylist</span>
+                <div className="stylist-dropdown">
+                  <button
+                    aria-expanded={isStylistMenuOpen}
+                    className="stylist-select-button"
+                    type="button"
+                    onClick={() => setIsStylistMenuOpen((current) => !current)}
+                  >
+                    <span>{selectedBarber}</span>
+                    <small className={selectedStylistStatus?.status === 'available' ? 'available' : 'at-work'}>
+                      {selectedStylistStatus?.label || 'At work'}
+                    </small>
+                    <ChevronDown size={18} />
+                  </button>
 
-            <label className="booking-field">
-              <span>Barber</span>
-              <select
-                value={selectedBarber}
-                onChange={(event) => {
-                  setSelectedBarber(event.target.value);
-                  setAvailability(null);
-                  setConfirmation(null);
-                }}
-              >
-                {barbers.map((barber) => (
-                  <option key={barber} value={barber}>{barber}</option>
-                ))}
-              </select>
-            </label>
+                  {isStylistMenuOpen && (
+                    <div className="stylist-menu">
+                      {stylistAvailability.map((stylist) => (
+                        <button
+                          className={selectedBarber === stylist.name ? 'selected' : ''}
+                          disabled={stylist.status !== 'available'}
+                          key={stylist.name}
+                          type="button"
+                          onClick={() => handleStylistSelect(stylist)}
+                        >
+                          <span>{stylist.name}</span>
+                          <small className={stylist.status}>{stylist.label}</small>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
 
             <div className="booking-actions">
-              <button type="button" className="check-availability-button" onClick={handleCheckAvailability}>
-                Check Availability
-              </button>
               <button
                 type="button"
                 className={`confirm-booking-button ${isBookingConfirmed ? 'confirmed' : ''}`}
@@ -404,11 +416,13 @@ function Book({ serviceId }) {
             </div>
 
             <div className="booking-status-panel">
-              {availability && (
-                <div className={`booking-status ${availability.status}`}>
-                  <p>{availability.message}</p>
-                </div>
-              )}
+              <div className={`booking-status ${selectedStylistStatus?.status === 'available' ? 'available' : 'unavailable'}`}>
+                <p>
+                  {selectedStylistStatus?.status === 'available'
+                    ? `${selectedBarber} is available at ${selectedTime}.`
+                    : 'All stylists are at work for this slot. Choose another time.'}
+                </p>
+              </div>
 
               {confirmation && (
                 <div className={`booking-confirmation ${confirmation.status}`}>
@@ -435,7 +449,7 @@ function Book({ serviceId }) {
               <strong>{selectedTime}</strong>
             </div>
             <div className="booking-summary-row">
-              <span>Barber</span>
+              <span>Preferred stylist</span>
               <strong>{selectedBarber}</strong>
             </div>
             <div className="booking-summary-row booking-summary-price">

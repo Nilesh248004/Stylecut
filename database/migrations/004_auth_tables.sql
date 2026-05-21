@@ -2,9 +2,11 @@ CREATE TABLE IF NOT EXISTS client_users (
   id SERIAL PRIMARY KEY,
   name VARCHAR(120) NOT NULL,
   email VARCHAR(160) NOT NULL UNIQUE,
-  phone VARCHAR(30) NOT NULL,
-  password_hash TEXT NOT NULL,
-  password_salt TEXT NOT NULL,
+  phone VARCHAR(30),
+  password_hash TEXT,
+  password_salt TEXT,
+  google_sub VARCHAR(160) UNIQUE,
+  avatar_url TEXT,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

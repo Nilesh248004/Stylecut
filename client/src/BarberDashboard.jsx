@@ -4,22 +4,28 @@ import {
   Home,
   History,
   MessageCircle,
+  MessageSquareText,
   Scissors,
   ShoppingBag,
-  Sparkles
+  Sparkles,
+  Star
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import {
   getAppointments,
   getBridalRequests,
+  getFeedback,
   getProductOrders,
+  getRatings,
   updateAppointmentStatus,
   updateBridalRequestStatus,
   updateProductOrderStatus
 } from './api';
+import { playSuccessNoticeSound } from './sounds';
 
 function whatsappLink(phone, message) {
-  const cleanPhone = String(phone || '').replace(/\D/g, '');
+  const digits = String(phone || '').replace(/\D/g, '');
+  const cleanPhone = digits.length === 10 ? `91${digits}` : digits.replace(/^0+/, '');
   return `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`;
 }
 
@@ -29,11 +35,17 @@ const dashboardSections = [
   { id: 'bridal', label: 'Bridal bookings', icon: Sparkles },
   { id: 'home-service', label: 'Home service requests', icon: Home },
   { id: 'history', label: 'Accepted/completed history', icon: History },
+  { id: 'feedback', label: 'Feedback received', icon: MessageSquareText },
+  { id: 'ratings', label: 'Ratings received', icon: Star },
   { id: 'whatsapp', label: 'WhatsApp confirmations', icon: MessageCircle }
 ];
 
 function isOpenStatus(item) {
   return !['accepted', 'completed'].includes(item.status);
+}
+
+function isActiveServiceStatus(item) {
+  return ['pending', 'accepted', 'completed'].includes(item.status);
 }
 
 function isHistoryStatus(item) {
@@ -52,22 +64,80 @@ function formatDate(dateValue) {
   });
 }
 
+function formatAppointmentDate(dateValue) {
+  if (!dateValue) {
+    return 'Date pending';
+  }
+
+  const [year, month, day] = String(dateValue).split('T')[0].split('-');
+  return year && month && day ? `${day}-${month}-${year}` : String(dateValue);
+}
+
+function formatAppointmentTime(timeValue) {
+  const [hourText, minute = '00'] = String(timeValue || '').split(':');
+  const hour = Number(hourText);
+
+  if (!Number.isFinite(hour)) {
+    return 'Time pending';
+  }
+
+  const period = hour >= 12 ? 'PM' : 'AM';
+  const displayHour = hour % 12 || 12;
+  return `${String(displayHour).padStart(2, '0')}:${minute.padStart(2, '0')} ${period}`;
+}
+
+function formatAppointmentSlot(item) {
+  return `${formatAppointmentDate(item.appointment_date)} at ${formatAppointmentTime(item.appointment_time)}`;
+}
+
+function preferredStylist(notes) {
+  const match = String(notes || '').match(/Preferred (?:stylist|barber):\s*([^\n]+)/i);
+  return match ? match[1].trim() : '';
+}
+
+function preferredStylistLabel(notes) {
+  return preferredStylist(notes) || 'Not specified';
+}
+
+function StatusLabel({ status, label }) {
+  const displayLabel = label || status;
+
+  if (status !== 'completed') {
+    return <span>{displayLabel}</span>;
+  }
+
+  return (
+    <span className="status-indicator completed">
+      <span aria-hidden="true" className="status-dot" />
+      {displayLabel}
+    </span>
+  );
+}
+
 function BarberDashboard() {
   const [appointments, setAppointments] = useState([]);
   const [orders, setOrders] = useState([]);
   const [bridalRequests, setBridalRequests] = useState([]);
+  const [feedbackItems, setFeedbackItems] = useState([]);
+  const [ratingItems, setRatingItems] = useState([]);
   const [activeSection, setActiveSection] = useState('services');
+  const [dashboardMessage, setDashboardMessage] = useState('');
+  const [activeAction, setActiveAction] = useState('');
 
   async function loadDashboard() {
-    const [appointmentData, orderData, bridalData] = await Promise.allSettled([
+    const [appointmentData, orderData, bridalData, feedbackData, ratingData] = await Promise.allSettled([
       getAppointments(),
       getProductOrders(),
-      getBridalRequests()
+      getBridalRequests(),
+      getFeedback(),
+      getRatings()
     ]);
 
     setAppointments(appointmentData.status === 'fulfilled' ? appointmentData.value : []);
     setOrders(orderData.status === 'fulfilled' ? orderData.value : []);
     setBridalRequests(bridalData.status === 'fulfilled' ? bridalData.value : []);
+    setFeedbackItems(feedbackData.status === 'fulfilled' ? feedbackData.value : []);
+    setRatingItems(ratingData.status === 'fulfilled' ? ratingData.value : []);
   }
 
   useEffect(() => {
@@ -75,38 +145,108 @@ function BarberDashboard() {
   }, []);
 
   async function acceptAppointment(item) {
-    await updateAppointmentStatus(item.id, 'accepted');
-    await loadDashboard();
+    setActiveAction(`service-${item.id}`);
+    setDashboardMessage('');
+
+    try {
+      await updateAppointmentStatus(item.id, 'accepted');
+      await loadDashboard();
+      setActiveSection('services');
+      setDashboardMessage(`Accepted ${item.service_name} booking for ${item.customer_name}. Mark it complete after the service is done.`);
+      playSuccessNoticeSound();
+    } catch (error) {
+      setDashboardMessage(error.message || 'Could not accept this booking.');
+    } finally {
+      setActiveAction('');
+    }
   }
 
   async function completeAppointment(item) {
-    await updateAppointmentStatus(item.id, 'completed');
-    await loadDashboard();
+    setActiveAction(`service-${item.id}`);
+    setDashboardMessage('');
+
+    try {
+      await updateAppointmentStatus(item.id, 'completed');
+      await loadDashboard();
+      setActiveSection('services');
+      setDashboardMessage(`Completed ${item.service_name} booking for ${item.customer_name}.`);
+      playSuccessNoticeSound();
+    } catch (error) {
+      setDashboardMessage(error.message || 'Could not complete this booking.');
+    } finally {
+      setActiveAction('');
+    }
   }
 
   async function acceptOrder(item) {
-    const updatedOrder = await updateProductOrderStatus(item.id, 'accepted');
-    window.open(whatsappLink(updatedOrder.customer_phone, orderMessage(updatedOrder)), '_blank', 'noreferrer');
-    await loadDashboard();
+    setActiveAction(`order-${item.id}`);
+    setDashboardMessage('');
+
+    try {
+      const updatedOrder = await updateProductOrderStatus(item.id, 'accepted');
+      window.open(whatsappLink(updatedOrder.customer_phone, orderMessage(updatedOrder)), '_blank', 'noreferrer');
+      await loadDashboard();
+      setDashboardMessage(`Accepted order #${item.id} for delivery.`);
+      playSuccessNoticeSound();
+    } catch (error) {
+      setDashboardMessage(error.message || 'Could not accept this order.');
+    } finally {
+      setActiveAction('');
+    }
   }
 
   async function completeOrder(item) {
-    const updatedOrder = await updateProductOrderStatus(item.id, 'completed');
-    window.open(whatsappLink(updatedOrder.customer_phone, orderMessage(updatedOrder)), '_blank', 'noreferrer');
-    await loadDashboard();
+    setActiveAction(`order-${item.id}`);
+    setDashboardMessage('');
+
+    try {
+      const updatedOrder = await updateProductOrderStatus(item.id, 'completed');
+      window.open(whatsappLink(updatedOrder.customer_phone, orderMessage(updatedOrder)), '_blank', 'noreferrer');
+      await loadDashboard();
+      setDashboardMessage(`Marked order #${item.id} as delivered.`);
+      playSuccessNoticeSound();
+    } catch (error) {
+      setDashboardMessage(error.message || 'Could not complete this order.');
+    } finally {
+      setActiveAction('');
+    }
   }
 
   async function acceptBridal(item) {
-    await updateBridalRequestStatus(item.id, 'accepted');
-    await loadDashboard();
+    setActiveAction(`bridal-${item.id}`);
+    setDashboardMessage('');
+
+    try {
+      await updateBridalRequestStatus(item.id, 'accepted');
+      await loadDashboard();
+      setActiveSection('history');
+      setDashboardMessage(`Accepted ${item.package_name} request for ${item.customer_name}.`);
+      playSuccessNoticeSound();
+    } catch (error) {
+      setDashboardMessage(error.message || 'Could not accept this bridal request.');
+    } finally {
+      setActiveAction('');
+    }
   }
 
   async function completeBridal(item) {
-    await updateBridalRequestStatus(item.id, 'completed');
-    await loadDashboard();
+    setActiveAction(`bridal-${item.id}`);
+    setDashboardMessage('');
+
+    try {
+      await updateBridalRequestStatus(item.id, 'completed');
+      await loadDashboard();
+      setActiveSection('history');
+      setDashboardMessage(`Completed ${item.package_name} request for ${item.customer_name}.`);
+      playSuccessNoticeSound();
+    } catch (error) {
+      setDashboardMessage(error.message || 'Could not complete this bridal request.');
+    } finally {
+      setActiveAction('');
+    }
   }
 
-  const openAppointments = appointments.filter(isOpenStatus);
+  const activeServiceAppointments = appointments.filter(isActiveServiceStatus);
   const visibleProductOrders = [
     ...orders.filter((item) => item.status === 'pending'),
     ...orders.filter((item) => item.status === 'accepted'),
@@ -126,7 +266,9 @@ function BarberDashboard() {
   ];
 
   function appointmentMessage(item) {
-    return `StyleCut confirmation: Your ${item.service_name} booking is ${item.status}. Date: ${item.appointment_date}, Time: ${item.appointment_time}.`;
+    const stylist = preferredStylist(item.notes);
+    const stylistText = stylist ? ` Preferred stylist: ${stylist}.` : '';
+    return `StyleCut confirmation: Your ${item.service_name} booking is ${item.status}. Date: ${formatAppointmentDate(item.appointment_date)}, Time: ${formatAppointmentTime(item.appointment_time)}.${stylistText}`;
   }
 
   function orderNames(item) {
@@ -158,20 +300,21 @@ function BarberDashboard() {
       <article className="barber-card" key={`service-${item.id}`}>
         <strong>{item.service_name}</strong>
         <span>{item.customer_name} · {item.customer_phone}</span>
-        <p>{item.appointment_date} at {item.appointment_time}</p>
-        <small>Status: {item.status}</small>
+        <p>{formatAppointmentSlot(item)}</p>
+        <small>Preferred stylist: {preferredStylistLabel(item.notes)}</small>
+        <small className="status-line">Status: <StatusLabel status={item.status} /></small>
         <div className="barber-card-actions">
           {item.status === 'completed' ? (
-            <button type="button" disabled>
+            <button className="completed-action" type="button" disabled>
               <CalendarCheck size={17} /> Completed
             </button>
           ) : item.status === 'accepted' ? (
-            <button type="button" onClick={() => completeAppointment(item)}>
-              <CalendarCheck size={17} /> Complete
+            <button type="button" onClick={() => completeAppointment(item)} disabled={activeAction === `service-${item.id}`}>
+              <CalendarCheck size={17} /> {activeAction === `service-${item.id}` ? 'Saving...' : 'Complete'}
             </button>
           ) : (
-            <button type="button" onClick={() => acceptAppointment(item)}>
-              <Check size={17} /> Accept
+            <button type="button" onClick={() => acceptAppointment(item)} disabled={activeAction === `service-${item.id}`}>
+              <Check size={17} /> {activeAction === `service-${item.id}` ? 'Accepting...' : 'Accept'}
             </button>
           )}
           <a href={whatsappLink(item.customer_phone, appointmentMessage(item))} target="_blank" rel="noreferrer">
@@ -206,19 +349,19 @@ function BarberDashboard() {
           </div>
         )}
         {item.order_notes && <small>Notes: {item.order_notes}</small>}
-        <small>Total: ₹{item.total_amount} · Status: {isAccepted ? 'out for delivery' : item.status}</small>
+        <small className="status-line">Total: ₹{item.total_amount} · Status: <StatusLabel status={item.status} label={isAccepted ? 'out for delivery' : item.status} /></small>
         <div className="barber-card-actions product-order-actions">
           {isDelivered ? (
-            <button type="button" disabled>
+            <button className="completed-action" type="button" disabled>
               <CalendarCheck size={17} /> Delivered
             </button>
           ) : isAccepted ? (
-            <button type="button" onClick={() => completeOrder(item)}>
-              <CalendarCheck size={17} /> Mark Delivered
+            <button type="button" onClick={() => completeOrder(item)} disabled={activeAction === `order-${item.id}`}>
+              <CalendarCheck size={17} /> {activeAction === `order-${item.id}` ? 'Saving...' : 'Mark Delivered'}
             </button>
           ) : (
-            <button type="button" onClick={() => acceptOrder(item)}>
-              <Check size={17} /> Accept to Delivery
+            <button type="button" onClick={() => acceptOrder(item)} disabled={activeAction === `order-${item.id}`}>
+              <Check size={17} /> {activeAction === `order-${item.id}` ? 'Accepting...' : 'Accept to Delivery'}
             </button>
           )}
         </div>
@@ -232,19 +375,19 @@ function BarberDashboard() {
         <strong>{item.package_name}</strong>
         <span>{item.customer_name} · {item.customer_phone}</span>
         <p>{item.location || 'Salon visit'} · {item.event_date || 'Date pending'}</p>
-        <small>Total: ₹{item.total_amount} · Status: {item.status}</small>
+        <small className="status-line">Total: ₹{item.total_amount} · Status: <StatusLabel status={item.status} /></small>
         <div className="barber-card-actions">
           {item.status === 'completed' ? (
-            <button type="button" disabled>
+            <button className="completed-action" type="button" disabled>
               <CalendarCheck size={17} /> Completed
             </button>
           ) : item.status === 'accepted' ? (
-            <button type="button" onClick={() => completeBridal(item)}>
-              <CalendarCheck size={17} /> Complete
+            <button type="button" onClick={() => completeBridal(item)} disabled={activeAction === `bridal-${item.id}`}>
+              <CalendarCheck size={17} /> {activeAction === `bridal-${item.id}` ? 'Saving...' : 'Complete'}
             </button>
           ) : (
-            <button type="button" onClick={() => acceptBridal(item)}>
-              <Check size={17} /> Accept
+            <button type="button" onClick={() => acceptBridal(item)} disabled={activeAction === `bridal-${item.id}`}>
+              <Check size={17} /> {activeAction === `bridal-${item.id}` ? 'Accepting...' : 'Accept'}
             </button>
           )}
           <a href={whatsappLink(item.customer_phone, bridalMessage(item))} target="_blank" rel="noreferrer">
@@ -268,7 +411,10 @@ function BarberDashboard() {
   }
 
   function getItemSummary(item) {
-    if (item.type === 'service') return `${item.appointment_date} at ${item.appointment_time}`;
+    if (item.type === 'service') {
+      return `${formatAppointmentSlot(item)} · Preferred stylist: ${preferredStylistLabel(item.notes)}`;
+    }
+
     if (item.type === 'product') return orderNames(item) || 'Product order';
     return `${item.location || 'Salon visit'} · ${item.event_date || 'Date pending'}`;
   }
@@ -282,7 +428,9 @@ function BarberDashboard() {
         <small>{item.customer_name} · {item.customer_phone}</small>
         <div className="history-status-row">
           <span>Status</span>
-          <strong>{item.status === 'completed' ? 'Completed' : 'Accepted'}</strong>
+          <strong>
+            <StatusLabel status={item.status} label={item.status === 'completed' ? 'Completed' : 'Accepted'} />
+          </strong>
         </div>
       </article>
     );
@@ -297,6 +445,32 @@ function BarberDashboard() {
         <a className="whatsapp-send-button" href={whatsappLink(item.customer_phone, getItemMessage(item))} target="_blank" rel="noreferrer">
           <MessageCircle size={17} /> Send WhatsApp Message
         </a>
+      </article>
+    );
+  }
+
+  function renderFeedbackCard(item) {
+    return (
+      <article className="barber-card" key={`feedback-${item.id}`}>
+        <strong>{item.client_name}</strong>
+        <span>{item.client_phone || item.client_email || 'Client contact not available'}</span>
+        <p>{item.feedback_text}</p>
+        <small>{formatDate(item.created_at)}</small>
+      </article>
+    );
+  }
+
+  function renderRatingCard(item) {
+    return (
+      <article className="barber-card rating-received-card" key={`rating-${item.id}`}>
+        <strong>{item.client_name}</strong>
+        <span>{item.client_phone || item.client_email || 'Client contact not available'}</span>
+        <div className="received-rating-stars" aria-label={`${item.rating} out of 5 rating`}>
+          {[1, 2, 3, 4, 5].map((value) => (
+            <Star className={value <= item.rating ? 'active' : ''} key={value} size={22} />
+          ))}
+        </div>
+        <small>{item.rating}/5 · {formatDate(item.created_at)}</small>
       </article>
     );
   }
@@ -343,10 +517,14 @@ function BarberDashboard() {
         </aside>
 
         <div className={`barber-panel barber-panel-${activeSection}`}>
+          {dashboardMessage && <p className="barber-status-message">{dashboardMessage}</p>}
+
           {activeSection === 'services' && (
             <div className="barber-column">
               <h2><Scissors size={22} /> Service bookings</h2>
-              {openAppointments.length ? openAppointments.map(renderAppointmentCard) : renderEmpty('No new service bookings.')}
+              {activeServiceAppointments.length
+                ? activeServiceAppointments.map(renderAppointmentCard)
+                : renderEmpty('No pending or accepted service bookings.')}
             </div>
           )}
 
@@ -381,6 +559,26 @@ function BarberDashboard() {
                 <p>Read-only record of accepted and completed services, orders, and bridal requests.</p>
               </div>
               {historyItems.length ? historyItems.map(renderHistoryCard) : renderEmpty('No accepted or completed work yet.')}
+            </div>
+          )}
+
+          {activeSection === 'feedback' && (
+            <div className="barber-column feedback-column">
+              <div className="barber-section-heading product-heading">
+                <h2><MessageSquareText size={22} /> Feedback received</h2>
+                <p>Read client feedback submitted from client account pages.</p>
+              </div>
+              {feedbackItems.length ? feedbackItems.map(renderFeedbackCard) : renderEmpty('No client feedback received yet.')}
+            </div>
+          )}
+
+          {activeSection === 'ratings' && (
+            <div className="barber-column ratings-column">
+              <div className="barber-section-heading product-heading">
+                <h2><Star size={22} /> Ratings received</h2>
+                <p>Review ratings submitted by clients after their StyleCut experience.</p>
+              </div>
+              {ratingItems.length ? ratingItems.map(renderRatingCard) : renderEmpty('No client ratings received yet.')}
             </div>
           )}
 
