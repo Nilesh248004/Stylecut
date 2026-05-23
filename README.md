@@ -35,7 +35,7 @@ PORT=5001
 DATABASE_URL=postgresql://USER:PASSWORD@HOST.neon.tech/DBNAME?sslmode=require
 DATABASE_SSL=true
 CLIENT_URLS=http://localhost:5173,http://localhost:5174,http://localhost:5175
-BARBER_STAFF_ID=STYLECUT001
+BARBER_STAFF_ID=your_staff_id
 BARBER_ACCESS_CODE=change-this-access-code
 GOOGLE_CLIENT_ID=your_google_oauth_client_id.apps.googleusercontent.com
 ```
