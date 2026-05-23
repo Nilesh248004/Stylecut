@@ -36,8 +36,7 @@ const dashboardSections = [
   { id: 'home-service', label: 'Home service requests', icon: Home },
   { id: 'history', label: 'Accepted/completed history', icon: History },
   { id: 'feedback', label: 'Feedback received', icon: MessageSquareText },
-  { id: 'ratings', label: 'Ratings received', icon: Star },
-  { id: 'whatsapp', label: 'WhatsApp confirmations', icon: MessageCircle }
+  { id: 'ratings', label: 'Ratings received', icon: Star }
 ];
 
 function isOpenStatus(item) {
@@ -259,18 +258,8 @@ function BarberDashboard() {
     ...orders.filter(isHistoryStatus).map((item) => ({ ...item, type: 'product' })),
     ...bridalRequests.filter(isHistoryStatus).map((item) => ({ ...item, type: item.home_service ? 'home-service' : 'bridal' }))
   ];
-  const whatsappItems = [
-    ...appointments.filter(isHistoryStatus).map((item) => ({ ...item, type: 'service' })),
-    ...orders.filter(isHistoryStatus).map((item) => ({ ...item, type: 'product' })),
-    ...bridalRequests.filter(isHistoryStatus).map((item) => ({ ...item, type: item.home_service ? 'home-service' : 'bridal' }))
-  ];
-
-  function appointmentMessage(item) {
-    const stylist = preferredStylist(item.notes);
-    const stylistText = stylist ? ` Preferred stylist: ${stylist}.` : '';
-    return `StyleCut confirmation: Your ${item.service_name} booking is ${item.status}. Date: ${formatAppointmentDate(item.appointment_date)}, Time: ${formatAppointmentTime(item.appointment_time)}.${stylistText}`;
-  }
-
+  const acceptedHistoryItems = historyItems.filter((item) => item.status === 'accepted');
+  const completedHistoryItems = historyItems.filter((item) => item.status === 'completed');
   function orderNames(item) {
     return (item.items || []).map((product) => `${product.name} x${product.quantity || 1}`).join(', ');
   }
@@ -309,17 +298,19 @@ function BarberDashboard() {
               <CalendarCheck size={17} /> Completed
             </button>
           ) : item.status === 'accepted' ? (
-            <button type="button" onClick={() => completeAppointment(item)} disabled={activeAction === `service-${item.id}`}>
-              <CalendarCheck size={17} /> {activeAction === `service-${item.id}` ? 'Saving...' : 'Complete'}
-            </button>
+            <>
+              <span className="accepted-action">
+                <Check size={17} /> Accepted
+              </span>
+              <button className="complete-action" type="button" onClick={() => completeAppointment(item)} disabled={activeAction === `service-${item.id}`}>
+                <CalendarCheck size={17} /> {activeAction === `service-${item.id}` ? 'Saving...' : 'Complete'}
+              </button>
+            </>
           ) : (
-            <button type="button" onClick={() => acceptAppointment(item)} disabled={activeAction === `service-${item.id}`}>
+            <button className="accept-action" type="button" onClick={() => acceptAppointment(item)} disabled={activeAction === `service-${item.id}`}>
               <Check size={17} /> {activeAction === `service-${item.id}` ? 'Accepting...' : 'Accept'}
             </button>
           )}
-          <a href={whatsappLink(item.customer_phone, appointmentMessage(item))} target="_blank" rel="noreferrer">
-            <MessageCircle size={17} /> WhatsApp
-          </a>
         </div>
       </article>
     );
@@ -356,11 +347,11 @@ function BarberDashboard() {
               <CalendarCheck size={17} /> Delivered
             </button>
           ) : isAccepted ? (
-            <button type="button" onClick={() => completeOrder(item)} disabled={activeAction === `order-${item.id}`}>
+            <button className="complete-action" type="button" onClick={() => completeOrder(item)} disabled={activeAction === `order-${item.id}`}>
               <CalendarCheck size={17} /> {activeAction === `order-${item.id}` ? 'Saving...' : 'Mark Delivered'}
             </button>
           ) : (
-            <button type="button" onClick={() => acceptOrder(item)} disabled={activeAction === `order-${item.id}`}>
+            <button className="accept-action" type="button" onClick={() => acceptOrder(item)} disabled={activeAction === `order-${item.id}`}>
               <Check size={17} /> {activeAction === `order-${item.id}` ? 'Accepting...' : 'Accept to Delivery'}
             </button>
           )}
@@ -382,11 +373,11 @@ function BarberDashboard() {
               <CalendarCheck size={17} /> Completed
             </button>
           ) : item.status === 'accepted' ? (
-            <button type="button" onClick={() => completeBridal(item)} disabled={activeAction === `bridal-${item.id}`}>
+            <button className="complete-action" type="button" onClick={() => completeBridal(item)} disabled={activeAction === `bridal-${item.id}`}>
               <CalendarCheck size={17} /> {activeAction === `bridal-${item.id}` ? 'Saving...' : 'Complete'}
             </button>
           ) : (
-            <button type="button" onClick={() => acceptBridal(item)} disabled={activeAction === `bridal-${item.id}`}>
+            <button className="accept-action" type="button" onClick={() => acceptBridal(item)} disabled={activeAction === `bridal-${item.id}`}>
               <Check size={17} /> {activeAction === `bridal-${item.id}` ? 'Accepting...' : 'Accept'}
             </button>
           )}
@@ -404,12 +395,6 @@ function BarberDashboard() {
     return item.package_name;
   }
 
-  function getItemMessage(item) {
-    if (item.type === 'service') return appointmentMessage(item);
-    if (item.type === 'product') return orderMessage(item);
-    return bridalMessage(item);
-  }
-
   function getItemSummary(item) {
     if (item.type === 'service') {
       return `${formatAppointmentSlot(item)} · Preferred stylist: ${preferredStylistLabel(item.notes)}`;
@@ -421,7 +406,7 @@ function BarberDashboard() {
 
   function renderHistoryCard(item) {
     return (
-      <article className="barber-card history-card" key={`history-${item.type}-${item.id}`}>
+      <article className={`barber-card history-card history-card-${item.status}`} key={`history-${item.type}-${item.id}`}>
         <span className="history-type">{item.type.replace('-', ' ')}</span>
         <strong>{getItemTitle(item)}</strong>
         <p>{getItemSummary(item)}</p>
@@ -432,19 +417,6 @@ function BarberDashboard() {
             <StatusLabel status={item.status} label={item.status === 'completed' ? 'Completed' : 'Accepted'} />
           </strong>
         </div>
-      </article>
-    );
-  }
-
-  function renderWhatsAppCard(item) {
-    return (
-      <article className="barber-card whatsapp-card" key={`whatsapp-${item.type}-${item.id}`}>
-        <span className="whatsapp-type">{item.type.replace('-', ' ')}</span>
-        <strong>{getItemTitle(item)}</strong>
-        <p>{getItemMessage(item)}</p>
-        <a className="whatsapp-send-button" href={whatsappLink(item.customer_phone, getItemMessage(item))} target="_blank" rel="noreferrer">
-          <MessageCircle size={17} /> Send WhatsApp Message
-        </a>
       </article>
     );
   }
@@ -556,9 +528,33 @@ function BarberDashboard() {
             <div className="barber-column history-column">
               <div className="barber-section-heading history-heading">
                 <h2><History size={22} /> Work history</h2>
-                <p>Read-only record of accepted and completed services, orders, and bridal requests.</p>
+                <p>Accepted work and completed records are grouped separately for quick review.</p>
               </div>
-              {historyItems.length ? historyItems.map(renderHistoryCard) : renderEmpty('No accepted or completed work yet.')}
+              {historyItems.length ? (
+                <div className="history-groups">
+                  <section className="history-group">
+                    <div className="history-group-heading">
+                      <div>
+                        <h3>Accepted</h3>
+                        <p>Ready for service, delivery, or follow-up</p>
+                      </div>
+                      <span>{acceptedHistoryItems.length}</span>
+                    </div>
+                    {acceptedHistoryItems.length ? acceptedHistoryItems.map(renderHistoryCard) : renderEmpty('No accepted work right now.')}
+                  </section>
+
+                  <section className="history-group">
+                    <div className="history-group-heading">
+                      <div>
+                        <h3>Completed</h3>
+                        <p>Finished bookings, delivered orders, and closed requests</p>
+                      </div>
+                      <span>{completedHistoryItems.length}</span>
+                    </div>
+                    {completedHistoryItems.length ? completedHistoryItems.map(renderHistoryCard) : renderEmpty('No completed work yet.')}
+                  </section>
+                </div>
+              ) : renderEmpty('No accepted or completed work yet.')}
             </div>
           )}
 
@@ -582,15 +578,6 @@ function BarberDashboard() {
             </div>
           )}
 
-          {activeSection === 'whatsapp' && (
-            <div className="barber-column whatsapp-column">
-              <div className="barber-section-heading whatsapp-heading">
-                <h2><MessageCircle size={22} /> WhatsApp center</h2>
-                <p>Send customer-facing confirmation messages from one place.</p>
-              </div>
-              {whatsappItems.length ? whatsappItems.map(renderWhatsAppCard) : renderEmpty('Accept a booking or order to prepare WhatsApp confirmations.')}
-            </div>
-          )}
         </div>
       </section>
     </main>

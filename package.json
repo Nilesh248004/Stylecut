@@ -4,8 +4,11 @@
   "private": true,
   "description": "PERN stack salon website with services, products, pricing, and appointment booking.",
   "scripts": {
-    "dev": "concurrently \"npm run dev --prefix server\" \"npm run dev --prefix client\"",
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "dev:all": "npm run stop:ports && concurrently \"npm run dev:server\" \"npm run dev:client\" \"npm run dev:barber\"",
+    "dev:all:fresh": "npm run dev:all",
     "dev:client": "npm run dev --prefix client",
+    "dev:barber": "npm run dev:barber --prefix client",
     "dev:server": "npm run dev --prefix server",
     "stop:ports": "kill-port 5001 5173 5174",
     "install:all": "npm install && npm install --prefix server && npm install --prefix client",

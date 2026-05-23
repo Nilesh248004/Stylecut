@@ -27,14 +27,58 @@ function normalizeMetaWhatsappPhone(phone) {
   return digits.length === 10 ? `91${digits}` : digits.replace(/^0+/, '');
 }
 
+function getNotificationText(notification) {
+  if (typeof notification === 'string') {
+    return notification;
+  }
+
+  return notification?.text || notification?.fallbackText || '';
+}
+
+function buildMetaTemplatePayload(notification) {
+  const template = notification?.metaTemplate;
+  if (!template?.name) {
+    return null;
+  }
+
+  const parameters = (template.bodyParameters || [])
+    .filter((value) => value !== undefined && value !== null)
+    .map((value) => ({
+      type: 'text',
+      text: String(value)
+    }));
+
+  return {
+    type: 'template',
+    template: {
+      name: template.name,
+      language: {
+        code: template.languageCode || config.metaTemplateLanguage
+      },
+      ...(parameters.length
+        ? {
+            components: [
+              {
+                type: 'body',
+                parameters
+              }
+            ]
+          }
+        : {})
+    }
+  };
+}
+
 // Mock notification (FREE - development/testing)
-async function sendMockNotification(toPhone, message) {
+async function sendMockNotification(toPhone, notification) {
+  const message = getNotificationText(notification);
   console.log(`\n🔔 WhatsApp Mock Notification to ${toPhone}:\n${message}\n`);
   return { success: true, mode: 'mock', phone: toPhone };
 }
 
 // Email notification (FREE if you have SMTP)
-async function sendEmailNotification(toEmail, message) {
+async function sendEmailNotification(toEmail, notification) {
+  const message = getNotificationText(notification);
   if (!toEmail) {
     console.warn('Email address not provided for notification');
     return null;
@@ -80,7 +124,8 @@ async function sendEmailNotification(toEmail, message) {
 }
 
 // Twilio WhatsApp (PAID - production)
-async function sendTwilioNotification(toPhone, message) {
+async function sendTwilioNotification(toPhone, notification) {
+  const message = getNotificationText(notification);
   const formattedPhone = normalizeWhatsappPhone(toPhone);
   if (!formattedPhone) {
     throw new Error('Invalid phone number for WhatsApp notification.');
@@ -114,7 +159,7 @@ async function sendTwilioNotification(toPhone, message) {
 }
 
 // Meta WhatsApp Cloud API (FREE TIER - 1000 msgs/month)
-async function sendMetaNotification(toPhone, message) {
+async function sendMetaNotification(toPhone, notification) {
   if (!config.metaPhoneNumberId || !config.metaBusinessAccountId || !config.metaAccessToken) {
     console.info('Meta WhatsApp Cloud API not configured.');
     return null;
@@ -124,6 +169,12 @@ async function sendMetaNotification(toPhone, message) {
   if (!phone) {
     throw new Error('Invalid phone number for WhatsApp notification.');
   }
+
+  const templatePayload = buildMetaTemplatePayload(notification);
+  const messagePayload = templatePayload || {
+    type: 'text',
+    text: { body: getNotificationText(notification) }
+  };
 
   const response = await fetch(
     `https://graph.facebook.com/v18.0/${config.metaPhoneNumberId}/messages`,
@@ -137,8 +188,7 @@ async function sendMetaNotification(toPhone, message) {
         messaging_product: 'whatsapp',
         recipient_type: 'individual',
         to: phone,
-        type: 'text',
-        text: { body: message }
+        ...messagePayload
       })
     }
   );

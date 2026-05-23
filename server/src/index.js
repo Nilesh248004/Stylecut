@@ -12,6 +12,11 @@ const googleJwksUrl = 'https://www.googleapis.com/oauth2/v3/certs';
 const googleIssuers = new Set(['https://accounts.google.com', 'accounts.google.com']);
 let googleKeyCache = { expiresAt: 0, keys: new Map() };
 
+function preferredStylistFromNotes(notes) {
+  const match = String(notes || '').match(/Preferred (?:stylist|barber):\s*([^\n]+)/i);
+  return match ? match[1].trim() : '';
+}
+
 async function notifyCustomerWhatsApp(phone, email, message) {
   if ((!phone && !email) || !message) {
     return;
@@ -22,6 +27,49 @@ async function notifyCustomerWhatsApp(phone, email, message) {
   } catch (error) {
     console.error('Notification failed:', error.message || error);
   }
+}
+
+function buildBookingConfirmationNotification(payload) {
+  const text = buildWhatsAppMessage('service_booked', payload);
+
+  return {
+    text,
+    metaTemplate: {
+      name: config.metaBookingConfirmationTemplate,
+      languageCode: config.metaTemplateLanguage,
+      bodyParameters: [
+        payload.customerName,
+        payload.serviceName,
+        payload.appointmentDate,
+        payload.appointmentTime
+      ]
+    }
+  };
+}
+
+function buildBookingStatusTemplateNotification(payload, status) {
+  const text = buildWhatsAppMessage('service_status_changed', {
+    ...payload,
+    status
+  });
+  const templateNameByStatus = {
+    accepted: config.metaBookingAcceptedTemplate,
+    completed: config.metaBookingCompletedTemplate
+  };
+
+  return {
+    text,
+    metaTemplate: {
+      name: templateNameByStatus[status],
+      languageCode: config.metaTemplateLanguage,
+      bodyParameters: [
+        payload.customerName,
+        payload.serviceName,
+        payload.appointmentDate,
+        payload.appointmentTime
+      ]
+    }
+  };
 }
 
 function buildWhatsAppMessage(type, payload) {
@@ -505,6 +553,41 @@ app.get('/api/stylists', (_req, res) => {
   res.json(stylists);
 });
 
+app.get('/api/stylist-availability', async (req, res, next) => {
+  const { date } = req.query;
+
+  if (!date) {
+    return res.status(400).json({ message: 'Date is required.' });
+  }
+
+  try {
+    const result = await query(
+      `
+        SELECT appointment_time, notes
+        FROM appointments
+        WHERE appointment_date = $1
+          AND status IN ('pending', 'accepted')
+      `,
+      [date]
+    );
+
+    const booked = result.rows.reduce((slots, appointment) => {
+      const stylist = preferredStylistFromNotes(appointment.notes);
+      if (!stylist) {
+        return slots;
+      }
+
+      slots[stylist] = slots[stylist] || [];
+      slots[stylist].push(String(appointment.appointment_time).slice(0, 5));
+      return slots;
+    }, {});
+
+    res.json({ date, stylists, booked });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.get('/api/products', async (_req, res, next) => {
   try {
     const result = await query(`
@@ -576,13 +659,18 @@ app.patch('/api/appointments/:id/status', requireBarber, async (req, res, next) 
       [status, req.params.id]
     );
 
-    const notificationMessage = buildWhatsAppMessage('service_status_changed', {
+    const notificationPayload = {
       customerName: appointment.customer_name,
       serviceName: appointment.service_name,
       appointmentDate: appointment.appointment_date,
-      appointmentTime: appointment.appointment_time,
-      status
-    });
+      appointmentTime: appointment.appointment_time
+    };
+    const notificationMessage = ['accepted', 'completed'].includes(status)
+      ? buildBookingStatusTemplateNotification(notificationPayload, status)
+      : buildWhatsAppMessage('service_status_changed', {
+          ...notificationPayload,
+          status
+        });
 
     if (notificationMessage) {
       notifyCustomerWhatsApp(appointment.customer_phone, appointment.customer_email, notificationMessage);
@@ -618,6 +706,27 @@ app.post('/api/appointments', async (req, res, next) => {
       notes || ''
     ].filter(Boolean).join('\n');
 
+    if (preferredBarber) {
+      const conflictResult = await query(
+        `
+          SELECT id
+          FROM appointments
+          WHERE appointment_date = $1
+            AND appointment_time = $2
+            AND status IN ('pending', 'accepted')
+            AND notes ILIKE $3
+          LIMIT 1
+        `,
+        [appointmentDate, appointmentTime, `%Preferred stylist: ${preferredBarber}%`]
+      );
+
+      if (conflictResult.rows.length) {
+        return res.status(409).json({
+          message: `${preferredBarber} is already booked for this time. Please choose another stylist or slot.`
+        });
+      }
+    }
+
     const result = await query(
       `
         INSERT INTO appointments (
@@ -649,7 +758,7 @@ app.post('/api/appointments', async (req, res, next) => {
       [serviceId]
     );
     const serviceName = serviceResult.rows[0]?.name || 'selected service';
-    const notificationMessage = buildWhatsAppMessage('service_booked', {
+    const notificationMessage = buildBookingConfirmationNotification({
       customerName: created.customer_name,
       serviceName,
       appointmentDate: created.appointment_date,

@@ -17,6 +17,10 @@ function getPageFromHash() {
     return page;
   }
 
+  if (import.meta.env.VITE_DEFAULT_PAGE) {
+    return import.meta.env.VITE_DEFAULT_PAGE;
+  }
+
   return 'client-auth';
 }
 

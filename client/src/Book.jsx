@@ -1,6 +1,6 @@
 import { CalendarDays, CheckCircle2, ChevronDown, Clock, Mail, Phone, User, UserCheck } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import { createAppointment, getServices, getStylists } from './api';
+import { createAppointment, getServices, getStylistAvailability, getStylists } from './api';
 import { playSuccessNoticeSound } from './sounds';
 
 const fallbackServices = [
@@ -86,22 +86,11 @@ function formatDisplayDate(dateValue) {
 
 const fallbackStylists = ['Raghul', 'Chang Lee', 'Jason Makki', 'Vasanth', 'Aalim Hakim'];
 const timeSlots = ['10:00 AM', '11:30 AM', '01:00 PM', '02:30 PM', '04:00 PM'];
-const bookedSlots = {
-  '2026-05-21': {
-    Raghul: ['10:00 AM', '04:00 PM'],
-    'Chang Lee': ['11:30 AM'],
-    'Jason Makki': ['02:30 PM']
-  },
-  '2026-05-22': {
-    Raghul: ['01:00 PM'],
-    Vasanth: ['10:00 AM', '02:30 PM'],
-    'Aalim Hakim': ['11:30 AM']
-  }
-};
 
 function Book({ serviceId }) {
   const [services, setServices] = useState([]);
   const [stylists, setStylists] = useState(fallbackStylists);
+  const [bookedSlots, setBookedSlots] = useState({});
   const [selectedServiceId, setSelectedServiceId] = useState(serviceId || '');
   const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [selectedTime, setSelectedTime] = useState(timeSlots[0]);
@@ -112,6 +101,15 @@ function Book({ serviceId }) {
   const [confirmation, setConfirmation] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isStylistMenuOpen, setIsStylistMenuOpen] = useState(false);
+
+  async function refreshStylistAvailability(date = selectedDate) {
+    const availability = await getStylistAvailability(date);
+    setBookedSlots(availability.booked || {});
+    if (availability.stylists?.length) {
+      setStylists(availability.stylists);
+      setSelectedBarber((current) => availability.stylists.includes(current) ? current : availability.stylists[0]);
+    }
+  }
 
   useEffect(() => {
     async function loadServices() {
@@ -144,22 +142,49 @@ function Book({ serviceId }) {
     loadStylists();
   }, []);
 
+  useEffect(() => {
+    let isActive = true;
+
+    async function loadAvailability() {
+      try {
+        const availability = await getStylistAvailability(selectedDate);
+        if (!isActive) {
+          return;
+        }
+
+        setBookedSlots(availability.booked || {});
+        if (availability.stylists?.length) {
+          setStylists(availability.stylists);
+          setSelectedBarber((current) => availability.stylists.includes(current) ? current : availability.stylists[0]);
+        }
+      } catch {
+        if (isActive) {
+          setBookedSlots({});
+        }
+      }
+    }
+
+    loadAvailability();
+
+    return () => {
+      isActive = false;
+    };
+  }, [selectedDate]);
+
   const service = useMemo(() => {
     return services.find((item) => item.id === Number(selectedServiceId));
   }, [services, selectedServiceId]);
 
   const stylistAvailability = useMemo(() => {
-    const bookedForDate = bookedSlots[selectedDate] || {};
-
     return stylists.map((stylist) => {
-      const isAvailable = !(bookedForDate[stylist] || []).includes(selectedTime);
+      const isAvailable = !(bookedSlots[stylist] || []).includes(toApiTime(selectedTime).slice(0, 5));
       return {
         name: stylist,
         status: isAvailable ? 'available' : 'at-work',
         label: isAvailable ? 'Available' : 'At work'
       };
     });
-  }, [selectedDate, selectedTime, stylists]);
+  }, [bookedSlots, selectedTime, stylists]);
 
   const selectedStylistStatus = stylistAvailability.find((stylist) => stylist.name === selectedBarber);
   const isBookingConfirmed = confirmation?.status === 'confirmed';
@@ -211,13 +236,14 @@ function Book({ serviceId }) {
         status: 'confirmed',
         message: `Your booking for ${service.name} with ${selectedBarber} on ${selectedDate} at ${selectedTime} is confirmed.`
       });
+      await refreshStylistAvailability(selectedDate);
       playSuccessNoticeSound();
-    } catch {
+    } catch (error) {
+      await refreshStylistAvailability(selectedDate).catch(() => {});
       setConfirmation({
-        status: 'confirmed',
-        message: `Your booking request for ${service.name} with ${selectedBarber} on ${selectedDate} at ${selectedTime} is ready.`
+        status: 'error',
+        message: error.message || 'Could not confirm this booking. Please try another stylist or time.'
       });
-      playSuccessNoticeSound();
     } finally {
       setIsSubmitting(false);
     }

@@ -37,6 +37,10 @@ export function getStylists() {
   return request('/api/stylists');
 }
 
+export function getStylistAvailability(date) {
+  return request(`/api/stylist-availability?date=${encodeURIComponent(date)}`);
+}
+
 export function getProducts() {
   return request('/api/products');
 }
