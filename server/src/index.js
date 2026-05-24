@@ -72,6 +72,43 @@ function buildBookingStatusTemplateNotification(payload, status) {
   };
 }
 
+function buildProductOrderNotification(type, payload) {
+  const text = buildWhatsAppMessage(type, payload);
+  const templateNameByType = {
+    product_ordered: config.metaProductOrderConfirmationTemplate,
+    product_order_accepted: config.metaProductOrderAcceptedTemplate,
+    product_order_completed: config.metaProductOrderCompletedTemplate,
+    product_order_cancelled: config.metaProductOrderCancelledTemplate
+  };
+  const bodyParametersByType = {
+    product_ordered: [
+      payload.customerName,
+      payload.itemCount,
+      payload.totalAmount,
+      payload.deliveryAddress
+    ],
+    product_order_accepted: [
+      payload.orderId,
+      payload.estimatedDeliveryDate
+    ],
+    product_order_completed: [
+      payload.orderId
+    ],
+    product_order_cancelled: [
+      payload.orderId
+    ]
+  };
+
+  return {
+    text,
+    metaTemplate: {
+      name: templateNameByType[type],
+      languageCode: config.metaTemplateLanguage,
+      bodyParameters: bodyParametersByType[type] || []
+    }
+  };
+}
+
 function buildWhatsAppMessage(type, payload) {
   switch (type) {
     case 'service_booked':
@@ -863,7 +900,7 @@ app.post('/api/product-orders', async (req, res, next) => {
 
     const created = result.rows[0];
     const itemCount = Array.isArray(items) ? items.reduce((total, item) => total + Number(item.quantity || 1), 0) : 0;
-    const notificationMessage = buildWhatsAppMessage('product_ordered', {
+    const notificationMessage = buildProductOrderNotification('product_ordered', {
       customerName: created.customer_name,
       itemCount,
       totalAmount: created.total_amount,
@@ -915,7 +952,7 @@ app.patch('/api/product-orders/:id/status', requireBarber, async (req, res, next
         [status, estimate.date, estimate.reason, req.params.id]
       );
 
-      const notificationMessage = buildWhatsAppMessage('product_order_accepted', {
+      const notificationMessage = buildProductOrderNotification('product_order_accepted', {
         orderId: result.rows[0].id,
         estimatedDeliveryDate: result.rows[0].estimated_delivery_date
       });
@@ -938,7 +975,7 @@ app.patch('/api/product-orders/:id/status', requireBarber, async (req, res, next
         [status, req.params.id]
       );
 
-      const notificationMessage = buildWhatsAppMessage(
+      const notificationMessage = buildProductOrderNotification(
         status === 'completed' ? 'product_order_completed' : 'product_order_cancelled',
         {
           orderId: existingOrder.id

@@ -195,7 +195,18 @@ async function sendMetaNotification(toPhone, notification) {
 
   const result = await response.json();
   if (!response.ok) {
-    console.error('Meta WhatsApp send failed', result);
+    if (result?.error?.code === 190) {
+      console.error(
+        'Meta WhatsApp send failed: access token authentication error. Refresh META_ACCESS_TOKEN and confirm it has WhatsApp permissions for META_PHONE_NUMBER_ID.',
+        {
+          code: result.error.code,
+          type: result.error.type,
+          fbtrace_id: result.error.fbtrace_id
+        }
+      );
+    } else {
+      console.error('Meta WhatsApp send failed', result);
+    }
     throw new Error('WhatsApp notification failed.');
   }
 
