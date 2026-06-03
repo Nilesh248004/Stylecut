@@ -1,1 +1,1 @@
-import '../../client/src/main.jsx';
+import '../../shared-frontend/src/main.jsx';

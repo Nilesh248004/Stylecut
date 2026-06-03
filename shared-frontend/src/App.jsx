@@ -9,7 +9,16 @@ import ClientAuth from './ClientAuth';
 import Account from './Account';
 import ProductCheckout from './ProductCheckout';
 import ProductPayment from './ProductPayment';
+import PrivacyPolicy, { DataDeletion } from './PrivacyPolicy';
 import { useEffect, useState } from 'react';
+
+const LOCAL_DEFAULT_PAGES = {
+  '5174': 'barber-auth'
+};
+
+function getDefaultPage() {
+  return import.meta.env.VITE_DEFAULT_PAGE || LOCAL_DEFAULT_PAGES[window.location.port] || 'client-auth';
+}
 
 function getPageFromHash() {
   const page = window.location.hash.replace('#/', '');
@@ -17,11 +26,7 @@ function getPageFromHash() {
     return page;
   }
 
-  if (import.meta.env.VITE_DEFAULT_PAGE) {
-    return import.meta.env.VITE_DEFAULT_PAGE;
-  }
-
-  return 'client-auth';
+  return getDefaultPage();
 }
 
 function App() {
@@ -72,6 +77,14 @@ function App() {
   if (page === 'account') {
     const isClientSignedIn = Boolean(window.localStorage.getItem('stylecut_client_token'));
     return isClientSignedIn ? <Account /> : <ClientAuth />;
+  }
+
+  if (page === 'privacy') {
+    return <PrivacyPolicy />;
+  }
+
+  if (page === 'data-deletion') {
+    return <DataDeletion />;
   }
 
   if (page === 'barber-auth') {

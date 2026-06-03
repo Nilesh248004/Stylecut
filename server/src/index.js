@@ -10,7 +10,7 @@ import { sendWhatsAppNotification } from './whatsapp.js';
 
 const app = express();
 const currentDir = dirname(fileURLToPath(import.meta.url));
-const clientDistPath = resolve(currentDir, '../../client/dist');
+const clientDistPath = resolve(currentDir, '../../client-frontend/dist');
 const allowedStatuses = new Set(['pending', 'accepted', 'completed', 'cancelled']);
 const stylists = ['Raghul', 'Chang Lee', 'Jason Makki', 'Vasanth', 'Aalim Hakim'];
 const googleJwksUrl = 'https://www.googleapis.com/oauth2/v3/certs';
@@ -112,6 +112,23 @@ function buildProductOrderNotification(type, payload) {
       bodyParameters: bodyParametersByType[type] || []
     }
   };
+}
+
+function formatNotificationDate(dateValue) {
+  if (!dateValue) {
+    return 'Date pending';
+  }
+
+  const date = new Date(dateValue);
+  if (Number.isNaN(date.getTime())) {
+    return String(dateValue);
+  }
+
+  return new Intl.DateTimeFormat('en-GB', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric'
+  }).format(date).replace(/\//g, '-');
 }
 
 function buildWhatsAppMessage(type, payload) {
@@ -959,7 +976,7 @@ app.patch('/api/product-orders/:id/status', requireBarber, async (req, res, next
 
       const notificationMessage = buildProductOrderNotification('product_order_accepted', {
         orderId: result.rows[0].id,
-        estimatedDeliveryDate: result.rows[0].estimated_delivery_date
+        estimatedDeliveryDate: formatNotificationDate(result.rows[0].estimated_delivery_date)
       });
       notifyCustomerWhatsApp(existingOrder.customer_phone, existingOrder.customer_email, notificationMessage);
       return res.json(result.rows[0]);

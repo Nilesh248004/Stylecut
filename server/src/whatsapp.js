@@ -36,6 +36,10 @@ function getNotificationText(notification) {
 }
 
 function buildMetaTemplatePayload(notification) {
+  if (!config.metaUseTemplates) {
+    return null;
+  }
+
   const template = notification?.metaTemplate;
   if (!template?.name) {
     return null;
@@ -201,6 +205,16 @@ async function sendMetaNotification(toPhone, notification) {
         {
           code: result.error.code,
           type: result.error.type,
+          fbtrace_id: result.error.fbtrace_id
+        }
+      );
+    } else if (result?.error?.code === 132001) {
+      console.error(
+        'Meta WhatsApp send failed: template is missing or not approved for the configured language. Create/publish the template in WhatsApp Manager, or set META_USE_TEMPLATES=false for local testing.',
+        {
+          template: messagePayload?.template?.name,
+          language: messagePayload?.template?.language?.code,
+          details: result.error.error_data?.details,
           fbtrace_id: result.error.fbtrace_id
         }
       );

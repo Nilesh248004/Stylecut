@@ -3195,6 +3195,73 @@ h1 {
   color: rgba(255, 255, 255, 0.78);
 }
 
+.service-bookings-heading {
+  border: 1px solid #050505;
+  background: #050505;
+  color: #ffffff;
+}
+
+.service-bookings-heading p {
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.service-bookings-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.service-bookings-title-row > div {
+  display: grid;
+  gap: 8px;
+}
+
+.service-bookings-title-row span {
+  min-width: 42px;
+  min-height: 42px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #ffffff;
+  color: #050505;
+  font-size: 0.9rem;
+  font-weight: 950;
+}
+
+.service-booking-search {
+  min-height: 48px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 8px;
+  padding: 0 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+}
+
+.service-booking-search input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: #ffffff;
+  font: inherit;
+  font-weight: 850;
+  outline: 0;
+}
+
+.service-booking-search input::placeholder {
+  color: rgba(255, 255, 255, 0.68);
+}
+
+.service-booking-search:focus-within {
+  border-color: #ffffff;
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.14);
+}
+
 .whatsapp-heading {
   border: 1px solid #16a34a;
   background: #dcfce7;
@@ -3210,10 +3277,46 @@ h1 {
   box-shadow: 0 14px 34px rgba(5, 5, 5, 0.08);
 }
 
+.service-booking-card.needs-action {
+  border-color: #050505;
+  background: #fffdf5;
+  box-shadow: 0 20px 44px rgba(5, 5, 5, 0.14);
+}
+
+.service-booking-title {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.service-booking-title strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.booking-action-badge {
+  border-radius: 999px;
+  padding: 6px 10px;
+  background: #050505;
+  color: #ffffff;
+  font-size: 0.74rem;
+  font-weight: 950;
+  white-space: nowrap;
+}
+
+.booking-action-badge.completed {
+  background: #16a34a;
+}
+
 .barber-card span,
 .barber-card p,
 .barber-card small {
   color: #555555;
+}
+
+.barber-card .booking-action-badge {
+  color: #ffffff;
 }
 
 .barber-card p {
@@ -3762,6 +3865,113 @@ h1 {
   margin: 0 auto;
   padding: 0 0 14px;
   font-size: 0.86rem;
+}
+
+.footer-legal-links {
+  width: min(1320px, calc(100% - 48px));
+  margin: 0 auto;
+  padding: 0 0 16px;
+  display: flex;
+  gap: 18px;
+  color: #d8d8d8;
+  font-size: 0.9rem;
+}
+
+.footer-legal-links a:hover {
+  color: #ffffff;
+}
+
+.legal-page {
+  min-height: 100vh;
+  color: #111111;
+  background: #f6f4ef;
+  padding: 32px 0 56px;
+}
+
+.legal-header,
+.legal-content {
+  width: min(960px, calc(100% - 40px));
+  margin: 0 auto;
+}
+
+.legal-header {
+  display: grid;
+  gap: 42px;
+  padding: 18px 0 34px;
+}
+
+.legal-brand .brand-mark {
+  background: #111111;
+  color: #ffffff;
+}
+
+.legal-brand .brand-text strong {
+  color: #111111;
+}
+
+.legal-brand .brand-text small {
+  color: #646464;
+}
+
+.legal-heading p {
+  margin: 0 0 10px;
+  color: #8b5a2b;
+  font-size: 0.78rem;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.legal-heading h1 {
+  margin: 0;
+  color: #111111;
+  font-size: clamp(2.2rem, 6vw, 4.6rem);
+  line-height: 0.95;
+}
+
+.legal-heading span {
+  display: block;
+  max-width: 680px;
+  margin-top: 18px;
+  color: #595959;
+  font-size: 1.05rem;
+}
+
+.legal-content {
+  display: grid;
+  gap: 18px;
+  padding: 34px;
+  border: 1px solid rgba(17, 17, 17, 0.12);
+  background: #ffffff;
+}
+
+.legal-content h2 {
+  margin: 18px 0 0;
+  color: #111111;
+  font-size: 1.22rem;
+}
+
+.legal-content p {
+  margin: 0;
+  color: #3e3e3e;
+  font-size: 1rem;
+}
+
+.legal-content a {
+  color: #8b4a10;
+  font-weight: 800;
+}
+
+.legal-content p:has(svg) {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.legal-updated {
+  margin-top: 18px !important;
+  color: #777777 !important;
+  font-size: 0.9rem !important;
 }
 
 @media (max-width: 900px) {

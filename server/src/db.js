@@ -19,6 +19,13 @@ export const pool = new Pool({
   connectionTimeoutMillis: Number(process.env.DATABASE_CONNECTION_TIMEOUT_MS) || 10000
 });
 
+pool.on('error', (error) => {
+  console.warn('Postgres idle connection error; the pool will replace this connection.', {
+    code: error.code,
+    message: error.message
+  });
+});
+
 export async function query(text, params) {
   const result = await pool.query(text, params);
   return result;

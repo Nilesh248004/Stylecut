@@ -75,6 +75,10 @@ function Homepage() {
         </div>
 
         <p className="copyright">Copyright © 2026 StyleCut Salon. All rights reserved.</p>
+        <div className="footer-legal-links">
+          <a href="#/privacy">Privacy Policy</a>
+          <a href="#/data-deletion">Data Deletion</a>
+        </div>
       </footer>
     </main>
   );

@@ -13,6 +13,15 @@ function splitCsv(value) {
     .filter(Boolean);
 }
 
+function envFlag(name, defaultValue = false) {
+  const value = process.env[name];
+  if (value === undefined) {
+    return defaultValue;
+  }
+
+  return ['1', 'true', 'yes', 'on'].includes(String(value).trim().toLowerCase());
+}
+
 export const config = {
   port: Number(process.env.PORT) || 5001,
   databaseUrl: process.env.DATABASE_URL?.trim(),
@@ -28,6 +37,7 @@ export const config = {
   metaPhoneNumberId: process.env.META_PHONE_NUMBER_ID || '',
   metaBusinessAccountId: process.env.META_BUSINESS_ACCOUNT_ID || '',
   metaAccessToken: process.env.META_ACCESS_TOKEN || '',
+  metaUseTemplates: envFlag('META_USE_TEMPLATES', true),
   metaTemplateLanguage: process.env.META_TEMPLATE_LANGUAGE || 'en_US',
   metaBookingConfirmationTemplate: process.env.META_BOOKING_CONFIRMATION_TEMPLATE || 'booking',
   metaBookingAcceptedTemplate: process.env.META_BOOKING_ACCEPTED_TEMPLATE || 'booking_accepted',

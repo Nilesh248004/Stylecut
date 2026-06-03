@@ -6,11 +6,12 @@ import {
   MessageCircle,
   MessageSquareText,
   Scissors,
+  Search,
   ShoppingBag,
   Sparkles,
   Star
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   getAppointments,
   getBridalRequests,
@@ -38,6 +39,12 @@ const dashboardSections = [
   { id: 'feedback', label: 'Feedback received', icon: MessageSquareText },
   { id: 'ratings', label: 'Ratings received', icon: Star }
 ];
+const DASHBOARD_REFRESH_MS = 4000;
+const SERVICE_STATUS_PRIORITY = {
+  pending: 0,
+  accepted: 1,
+  completed: 2
+};
 
 function isOpenStatus(item) {
   return !['accepted', 'completed'].includes(item.status);
@@ -98,6 +105,44 @@ function preferredStylistLabel(notes) {
   return preferredStylist(notes) || 'Not specified';
 }
 
+function serviceBookingSearchText(item) {
+  return [
+    item.id,
+    item.service_name,
+    item.customer_name,
+    item.customer_phone,
+    item.status,
+    preferredStylistLabel(item.notes),
+    formatAppointmentDate(item.appointment_date),
+    formatAppointmentTime(item.appointment_time)
+  ].join(' ').toLowerCase();
+}
+
+function serviceBookingSortKey(item) {
+  const appointmentDate = String(item.appointment_date || '').split('T')[0];
+  const appointmentTime = String(item.appointment_time || '00:00');
+  const timestamp = new Date(`${appointmentDate}T${appointmentTime}`).getTime();
+  return Number.isNaN(timestamp) ? Number.MAX_SAFE_INTEGER : timestamp;
+}
+
+function compareServiceBookings(first, second) {
+  const firstPriority = SERVICE_STATUS_PRIORITY[first.status] ?? 3;
+  const secondPriority = SERVICE_STATUS_PRIORITY[second.status] ?? 3;
+
+  if (firstPriority !== secondPriority) {
+    return firstPriority - secondPriority;
+  }
+
+  const firstTime = serviceBookingSortKey(first);
+  const secondTime = serviceBookingSortKey(second);
+
+  if (firstTime !== secondTime) {
+    return firstTime - secondTime;
+  }
+
+  return Number(second.id || 0) - Number(first.id || 0);
+}
+
 function StatusLabel({ status, label }) {
   const displayLabel = label || status;
 
@@ -122,8 +167,9 @@ function BarberDashboard() {
   const [activeSection, setActiveSection] = useState('services');
   const [dashboardMessage, setDashboardMessage] = useState('');
   const [activeAction, setActiveAction] = useState('');
+  const [serviceSearch, setServiceSearch] = useState('');
 
-  async function loadDashboard() {
+  const loadDashboard = useCallback(async () => {
     const [appointmentData, orderData, bridalData, feedbackData, ratingData] = await Promise.allSettled([
       getAppointments(),
       getProductOrders(),
@@ -132,16 +178,40 @@ function BarberDashboard() {
       getRatings()
     ]);
 
-    setAppointments(appointmentData.status === 'fulfilled' ? appointmentData.value : []);
-    setOrders(orderData.status === 'fulfilled' ? orderData.value : []);
-    setBridalRequests(bridalData.status === 'fulfilled' ? bridalData.value : []);
-    setFeedbackItems(feedbackData.status === 'fulfilled' ? feedbackData.value : []);
-    setRatingItems(ratingData.status === 'fulfilled' ? ratingData.value : []);
-  }
+    if (appointmentData.status === 'fulfilled') setAppointments(appointmentData.value);
+    if (orderData.status === 'fulfilled') setOrders(orderData.value);
+    if (bridalData.status === 'fulfilled') setBridalRequests(bridalData.value);
+    if (feedbackData.status === 'fulfilled') setFeedbackItems(feedbackData.value);
+    if (ratingData.status === 'fulfilled') setRatingItems(ratingData.value);
+  }, []);
 
   useEffect(() => {
-    loadDashboard();
-  }, []);
+    let isMounted = true;
+    let isRefreshing = false;
+
+    async function refreshDashboard() {
+      if (!isMounted || isRefreshing) {
+        return;
+      }
+
+      isRefreshing = true;
+      try {
+        await loadDashboard();
+      } finally {
+        isRefreshing = false;
+      }
+    }
+
+    refreshDashboard();
+    const refreshTimer = window.setInterval(refreshDashboard, DASHBOARD_REFRESH_MS);
+    window.addEventListener('focus', refreshDashboard);
+
+    return () => {
+      isMounted = false;
+      window.clearInterval(refreshTimer);
+      window.removeEventListener('focus', refreshDashboard);
+    };
+  }, [loadDashboard]);
 
   async function acceptAppointment(item) {
     setActiveAction(`service-${item.id}`);
@@ -182,10 +252,9 @@ function BarberDashboard() {
     setDashboardMessage('');
 
     try {
-      const updatedOrder = await updateProductOrderStatus(item.id, 'accepted');
-      window.open(whatsappLink(updatedOrder.customer_phone, orderMessage(updatedOrder)), '_blank', 'noreferrer');
+      await updateProductOrderStatus(item.id, 'accepted');
       await loadDashboard();
-      setDashboardMessage(`Accepted order #${item.id} for delivery.`);
+      setDashboardMessage(`Accepted order #${item.id} for delivery. WhatsApp notification sent to ${item.customer_name}.`);
       playSuccessNoticeSound();
     } catch (error) {
       setDashboardMessage(error.message || 'Could not accept this order.');
@@ -199,10 +268,9 @@ function BarberDashboard() {
     setDashboardMessage('');
 
     try {
-      const updatedOrder = await updateProductOrderStatus(item.id, 'completed');
-      window.open(whatsappLink(updatedOrder.customer_phone, orderMessage(updatedOrder)), '_blank', 'noreferrer');
+      await updateProductOrderStatus(item.id, 'completed');
       await loadDashboard();
-      setDashboardMessage(`Marked order #${item.id} as delivered.`);
+      setDashboardMessage(`Marked order #${item.id} as delivered. WhatsApp notification sent to ${item.customer_name}.`);
       playSuccessNoticeSound();
     } catch (error) {
       setDashboardMessage(error.message || 'Could not complete this order.');
@@ -245,7 +313,14 @@ function BarberDashboard() {
     }
   }
 
-  const activeServiceAppointments = appointments.filter(isActiveServiceStatus);
+  const serviceSearchTerm = serviceSearch.trim().toLowerCase();
+  const activeServiceAppointments = useMemo(() => {
+    return appointments
+      .filter(isActiveServiceStatus)
+      .filter((item) => !serviceSearchTerm || serviceBookingSearchText(item).includes(serviceSearchTerm))
+      .sort(compareServiceBookings);
+  }, [appointments, serviceSearchTerm]);
+  const serviceBookingsNeedingAction = activeServiceAppointments.filter((item) => item.status !== 'completed').length;
   const visibleProductOrders = [
     ...orders.filter((item) => item.status === 'pending'),
     ...orders.filter((item) => item.status === 'accepted'),
@@ -264,18 +339,6 @@ function BarberDashboard() {
     return (item.items || []).map((product) => `${product.name} x${product.quantity || 1}`).join(', ');
   }
 
-  function orderMessage(item) {
-    if (item.status === 'completed') {
-      return `StyleCut delivery confirmation: Your order ${orderNames(item)} has been delivered. Total: ₹${item.total_amount}. Thank you for shopping with StyleCut.`;
-    }
-
-    const estimate = item.estimated_delivery_date
-      ? ` Estimated delivery: ${formatDate(item.estimated_delivery_date)}.`
-      : '';
-    const deliveryStatus = item.status === 'accepted' ? 'accepted and out for delivery' : item.status;
-    return `StyleCut order update: ${orderNames(item)}. Address: ${item.delivery_address || 'Not provided'}. Total: ₹${item.total_amount}. Status: ${deliveryStatus}.${estimate}`;
-  }
-
   function bridalMessage(item) {
     return `StyleCut bridal confirmation: ${item.package_name}. Home service: ${item.home_service ? 'Accepted' : 'Not requested'}. Days: ${item.home_service_days}. Total: ₹${item.total_amount}. Status: ${item.status}.`;
   }
@@ -285,9 +348,15 @@ function BarberDashboard() {
   }
 
   function renderAppointmentCard(item) {
+    const needsAction = item.status !== 'completed';
+    const actionLabel = item.status === 'accepted' ? 'Needs completion' : 'Needs acceptance';
+
     return (
-      <article className="barber-card" key={`service-${item.id}`}>
-        <strong>{item.service_name}</strong>
+      <article className={`barber-card service-booking-card${needsAction ? ' needs-action' : ''}`} key={`service-${item.id}`}>
+        <div className="service-booking-title">
+          <strong>{item.service_name}</strong>
+          {needsAction ? <span className="booking-action-badge">{actionLabel}</span> : <span className="booking-action-badge completed">Confirmed</span>}
+        </div>
         <span>{item.customer_name} · {item.customer_phone}</span>
         <p>{formatAppointmentSlot(item)}</p>
         <small>Preferred stylist: {preferredStylistLabel(item.notes)}</small>
@@ -492,11 +561,29 @@ function BarberDashboard() {
           {dashboardMessage && <p className="barber-status-message">{dashboardMessage}</p>}
 
           {activeSection === 'services' && (
-            <div className="barber-column">
-              <h2><Scissors size={22} /> Service bookings</h2>
+            <div className="barber-column service-bookings-column">
+              <div className="barber-section-heading service-bookings-heading">
+                <div className="service-bookings-title-row">
+                  <div>
+                    <h2><Scissors size={22} /> Service bookings</h2>
+                    <p>{serviceBookingsNeedingAction} booking{serviceBookingsNeedingAction === 1 ? '' : 's'} need accept or complete action.</p>
+                  </div>
+                  <span>{activeServiceAppointments.length}</span>
+                </div>
+                <label className="service-booking-search">
+                  <Search size={18} />
+                  <input
+                    type="search"
+                    value={serviceSearch}
+                    onChange={(event) => setServiceSearch(event.target.value)}
+                    placeholder="Search name, phone, service, date, stylist, status..."
+                    aria-label="Search service bookings"
+                  />
+                </label>
+              </div>
               {activeServiceAppointments.length
                 ? activeServiceAppointments.map(renderAppointmentCard)
-                : renderEmpty('No pending or accepted service bookings.')}
+                : renderEmpty(serviceSearchTerm ? 'No service bookings match this search.' : 'No pending or accepted service bookings.')}
             </div>
           )}
 

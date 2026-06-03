@@ -13,9 +13,11 @@ StyleCut is a PERN stack salon website for showing salon services, service price
 
 ```text
 Stylecut/
-  client/      React frontend
-  server/      Express API
-  database/    PostgreSQL schema and seed data
+  client-frontend/   Client-facing React frontend deploy root
+  barber-frontend/   Barber/admin React frontend deploy root
+  shared-frontend/   Shared React source used by both frontends
+  server/            Express API
+  database/          PostgreSQL schema and seed data
 ```
 
 ## Setup With Neon
@@ -40,15 +42,30 @@ BARBER_ACCESS_CODE=change-this-access-code
 GOOGLE_CLIENT_ID=your_google_oauth_client_id.apps.googleusercontent.com
 ```
 
-Configure the client:
+Configure the client frontend:
 
 ```bash
-cp client/.env.example client/.env
+cp client-frontend/.env.example client-frontend/.env
 ```
 
-Update `client/.env` with the same Google OAuth web client ID:
+Update `client-frontend/.env` with the backend URL and the same Google OAuth web client ID:
 
 ```env
+VITE_API_BASE_URL=http://localhost:5001
+VITE_GOOGLE_CLIENT_ID=your_google_oauth_client_id.apps.googleusercontent.com
+```
+
+Configure the barber frontend:
+
+```bash
+cp barber-frontend/.env.example barber-frontend/.env
+```
+
+Update `barber-frontend/.env`:
+
+```env
+VITE_API_BASE_URL=http://localhost:5001
+VITE_DEFAULT_PAGE=barber-auth
 VITE_GOOGLE_CLIENT_ID=your_google_oauth_client_id.apps.googleusercontent.com
 ```
 
@@ -79,7 +96,9 @@ npm run install:all
 npm run dev
 ```
 
-Frontend: `http://localhost:5173`
+Client frontend: `http://localhost:5173`
+
+Barber frontend: `http://localhost:5174`
 
 API: `http://localhost:5001`
 
@@ -100,6 +119,8 @@ Backend checks:
 Create these templates in the same WhatsApp Business Account used by `META_BUSINESS_ACCOUNT_ID` and `META_PHONE_NUMBER_ID`.
 
 Use category `Utility` and language `English (US)` (`META_TEMPLATE_LANGUAGE=en_US`).
+
+If templates are still pending approval, keep `NOTIFICATION_MODE=mock` for local testing. You can also set `META_USE_TEMPLATES=false` to send plain text through Meta, but Meta only allows free-form text inside an open customer service window.
 
 ### booking
 
