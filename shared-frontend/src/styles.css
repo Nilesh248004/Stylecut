@@ -992,7 +992,10 @@ h1 {
   justify-content: center;
   background: #ffffff;
   color: #050505;
+  cursor: pointer;
+  font: inherit;
   font-weight: 950;
+  text-decoration: none;
   transition: background-color 160ms ease, color 160ms ease, transform 160ms ease;
 }
 
@@ -3010,11 +3013,60 @@ h1 {
   font-weight: 950;
 }
 
+.bridal-book-button.confirmed {
+  background: #16a34a;
+}
+
+.bridal-book-button:disabled {
+  cursor: default;
+  opacity: 0.78;
+}
+
 .bridal-request-status {
   margin: 14px 0 0;
+  border: 1px solid #d8d8d8;
+  border-radius: 8px;
+  padding: 14px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: #f7f7f7;
   color: #3f3f3f;
-  font-weight: 850;
   line-height: 1.5;
+}
+
+.bridal-request-status.success {
+  border-color: #86efac;
+  background: #f0fdf4;
+  color: #166534;
+}
+
+.bridal-request-status.error {
+  border-color: #fecaca;
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.bridal-request-status strong,
+.bridal-request-status p,
+.bridal-request-status small {
+  margin: 0;
+}
+
+.bridal-request-status strong {
+  display: block;
+  font-weight: 950;
+}
+
+.bridal-request-status p {
+  margin-top: 3px;
+  font-weight: 850;
+}
+
+.bridal-request-status small {
+  display: block;
+  margin-top: 6px;
+  font-weight: 900;
 }
 
 .barber-page {
@@ -3131,6 +3183,36 @@ h1 {
   transform: translateX(2px);
 }
 
+.barber-sidebar-label {
+  min-width: 0;
+  flex: 1;
+  color: inherit;
+  overflow-wrap: anywhere;
+}
+
+.barber-sidebar-badge {
+  min-width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  padding: 0 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #dc2626;
+  color: #ffffff;
+  font-size: 0.78rem;
+  font-weight: 950;
+  line-height: 1;
+  box-shadow: 0 8px 18px rgba(220, 38, 38, 0.28);
+}
+
+.barber-sidebar button.active .barber-sidebar-badge,
+.barber-sidebar button:hover .barber-sidebar-badge {
+  background: #ef4444;
+  color: #ffffff;
+  box-shadow: 0 8px 18px rgba(239, 68, 68, 0.36);
+}
+
 .barber-panel {
   min-width: 0;
   align-self: stretch;
@@ -3160,6 +3242,58 @@ h1 {
   align-items: center;
   gap: 10px;
   font-size: 1.2rem;
+}
+
+.barber-section-title-row,
+.section-heading-actions-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.section-heading-actions-row > div {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.section-heading-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.complete-all-action {
+  min-height: 40px;
+  border: 1px solid #16a34a;
+  border-radius: 8px;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: #16a34a;
+  color: #ffffff;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 950;
+  white-space: nowrap;
+  box-shadow: 0 10px 22px rgba(22, 163, 74, 0.18);
+  transition: background-color 160ms ease, border-color 160ms ease, transform 160ms ease, opacity 160ms ease;
+}
+
+.complete-all-action:hover:not(:disabled) {
+  border-color: #15803d;
+  background: #15803d;
+  transform: translateY(-1px);
+}
+
+.complete-all-action:disabled {
+  cursor: default;
+  opacity: 0.62;
+  transform: none;
 }
 
 .barber-section-heading {
@@ -3377,6 +3511,10 @@ h1 {
 }
 
 .product-order-actions {
+  grid-template-columns: 1fr;
+}
+
+.barber-card-actions.single-action {
   grid-template-columns: 1fr;
 }
 

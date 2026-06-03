@@ -9,6 +9,7 @@ export default defineConfig({
   plugins: [react()],
   envDir: '.',
   define: {
+    'import.meta.env.VITE_APP_ROLE': JSON.stringify(process.env.VITE_APP_ROLE || 'client'),
     'import.meta.env.VITE_DEFAULT_PAGE': JSON.stringify(process.env.VITE_DEFAULT_PAGE || 'client-auth')
   },
   resolve: {

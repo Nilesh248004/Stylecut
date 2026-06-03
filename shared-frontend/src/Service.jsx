@@ -1,5 +1,5 @@
 import { Clock, IndianRupee, Search, Scissors } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { getServices } from './api';
 
 const fallbackServices = [
@@ -73,6 +73,7 @@ const serviceImages = {
   'hair color':
     'https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?auto=format&fit=crop&w=1000&q=80'
 };
+const CATALOG_REFRESH_MS = 12000;
 
 function getServiceImage(service) {
   const name = service.name.toLowerCase();
@@ -91,17 +92,41 @@ function Service() {
   const [services, setServices] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
 
+  const loadServices = useCallback(async () => {
+    try {
+      setServices(await getServices());
+    } catch {
+      setServices((current) => current.length ? current : fallbackServices);
+    }
+  }, []);
+
   useEffect(() => {
-    async function loadServices() {
+    let isMounted = true;
+    let isRefreshing = false;
+
+    async function refreshServices() {
+      if (!isMounted || isRefreshing) {
+        return;
+      }
+
+      isRefreshing = true;
       try {
-        setServices(await getServices());
-      } catch {
-        setServices(fallbackServices);
+        await loadServices();
+      } finally {
+        isRefreshing = false;
       }
     }
 
-    loadServices();
-  }, []);
+    refreshServices();
+    const refreshTimer = window.setInterval(refreshServices, CATALOG_REFRESH_MS);
+    window.addEventListener('focus', refreshServices);
+
+    return () => {
+      isMounted = false;
+      window.clearInterval(refreshTimer);
+      window.removeEventListener('focus', refreshServices);
+    };
+  }, [loadServices]);
 
   const filteredServices = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();

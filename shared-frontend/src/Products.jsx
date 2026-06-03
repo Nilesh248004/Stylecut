@@ -1,5 +1,5 @@
 import { PackageSearch, Scissors, ShoppingBag, Plus, Minus } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { getProducts } from './api';
 
 const fallbackProducts = [
@@ -68,6 +68,7 @@ function currency(value) {
 }
 
 const productCartStorageKey = 'stylecut_product_cart';
+const PRODUCT_REFRESH_MS = 12000;
 
 function readSavedCartItems() {
   try {
@@ -185,17 +186,41 @@ function Products() {
     });
   };
 
+  const loadProducts = useCallback(async () => {
+    try {
+      setProducts(await getProducts());
+    } catch {
+      setProducts((current) => current.length ? current : fallbackProducts);
+    }
+  }, []);
+
   useEffect(() => {
-    async function loadProducts() {
+    let isMounted = true;
+    let isRefreshing = false;
+
+    async function refreshProducts() {
+      if (!isMounted || isRefreshing) {
+        return;
+      }
+
+      isRefreshing = true;
       try {
-        setProducts(await getProducts());
-      } catch {
-        setProducts(fallbackProducts);
+        await loadProducts();
+      } finally {
+        isRefreshing = false;
       }
     }
 
-    loadProducts();
-  }, []);
+    refreshProducts();
+    const refreshTimer = window.setInterval(refreshProducts, PRODUCT_REFRESH_MS);
+    window.addEventListener('focus', refreshProducts);
+
+    return () => {
+      isMounted = false;
+      window.clearInterval(refreshTimer);
+      window.removeEventListener('focus', refreshProducts);
+    };
+  }, [loadProducts]);
 
   useEffect(() => {
     window.localStorage.setItem(productCartStorageKey, JSON.stringify(cartItems));

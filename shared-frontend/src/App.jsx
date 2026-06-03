@@ -15,15 +15,53 @@ import { useEffect, useState } from 'react';
 const LOCAL_DEFAULT_PAGES = {
   '5174': 'barber-auth'
 };
+const APP_ROLE = import.meta.env.VITE_APP_ROLE || 'client';
+const CLIENT_PAGES = new Set([
+  'account',
+  'bridals',
+  'client-auth',
+  'data-deletion',
+  'home',
+  'privacy',
+  'product-checkout',
+  'product-payment',
+  'products',
+  'service'
+]);
+const BARBER_PAGES = new Set(['barber', 'barber-auth']);
 
 function getDefaultPage() {
   return import.meta.env.VITE_DEFAULT_PAGE || LOCAL_DEFAULT_PAGES[window.location.port] || 'client-auth';
 }
 
-function getPageFromHash() {
-  const page = window.location.hash.replace('#/', '');
-  if (page) {
+function getRawPageFromHash() {
+  return window.location.hash.replace('#/', '');
+}
+
+function isAllowedPage(page) {
+  if (APP_ROLE === 'barber') {
+    return BARBER_PAGES.has(page);
+  }
+
+  if (page.startsWith('book')) {
+    return true;
+  }
+
+  return CLIENT_PAGES.has(page);
+}
+
+function normalizePage(page) {
+  if (isAllowedPage(page)) {
     return page;
+  }
+
+  return getDefaultPage();
+}
+
+function getPageFromHash() {
+  const page = getRawPageFromHash();
+  if (page) {
+    return normalizePage(page);
   }
 
   return getDefaultPage();
@@ -34,14 +72,27 @@ function App() {
 
   useEffect(() => {
     function handleHashChange() {
-      setPage(getPageFromHash());
+      const rawPage = getRawPageFromHash();
+      const nextPage = rawPage ? normalizePage(rawPage) : getDefaultPage();
+
+      if (rawPage && rawPage !== nextPage) {
+        window.location.hash = `#/${nextPage}`;
+        return;
+      }
+
+      setPage(nextPage);
     }
 
+    handleHashChange();
     window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
 
   if (page.startsWith('book')) {
+    if (APP_ROLE === 'barber') {
+      return <BarberAuth />;
+    }
+
     const [, serviceId] = page.split('/');
     return <Book serviceId={serviceId} />;
   }

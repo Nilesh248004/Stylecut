@@ -1,5 +1,5 @@
 import { CalendarDays, CheckCircle2, ChevronDown, Clock, Mail, Phone, User, UserCheck } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createAppointment, getServices, getStylistAvailability, getStylists } from './api';
 import { playSuccessNoticeSound } from './sounds';
 
@@ -86,6 +86,7 @@ function formatDisplayDate(dateValue) {
 
 const fallbackStylists = ['Raghul', 'Chang Lee', 'Jason Makki', 'Vasanth', 'Aalim Hakim'];
 const timeSlots = ['10:00 AM', '11:30 AM', '01:00 PM', '02:30 PM', '04:00 PM'];
+const BOOKING_AVAILABILITY_REFRESH_MS = 4000;
 
 function Book({ serviceId }) {
   const [services, setServices] = useState([]);
@@ -102,14 +103,14 @@ function Book({ serviceId }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isStylistMenuOpen, setIsStylistMenuOpen] = useState(false);
 
-  async function refreshStylistAvailability(date = selectedDate) {
+  const refreshStylistAvailability = useCallback(async (date = selectedDate) => {
     const availability = await getStylistAvailability(date);
     setBookedSlots(availability.booked || {});
     if (availability.stylists?.length) {
       setStylists(availability.stylists);
       setSelectedBarber((current) => availability.stylists.includes(current) ? current : availability.stylists[0]);
     }
-  }
+  }, [selectedDate]);
 
   useEffect(() => {
     async function loadServices() {
@@ -143,33 +144,32 @@ function Book({ serviceId }) {
   }, []);
 
   useEffect(() => {
-    let isActive = true;
+    let isMounted = true;
+    let isRefreshing = false;
 
-    async function loadAvailability() {
+    async function refreshAvailability() {
+      if (!isMounted || isRefreshing) {
+        return;
+      }
+
+      isRefreshing = true;
       try {
-        const availability = await getStylistAvailability(selectedDate);
-        if (!isActive) {
-          return;
-        }
-
-        setBookedSlots(availability.booked || {});
-        if (availability.stylists?.length) {
-          setStylists(availability.stylists);
-          setSelectedBarber((current) => availability.stylists.includes(current) ? current : availability.stylists[0]);
-        }
-      } catch {
-        if (isActive) {
-          setBookedSlots({});
-        }
+        await refreshStylistAvailability(selectedDate);
+      } finally {
+        isRefreshing = false;
       }
     }
 
-    loadAvailability();
+    refreshAvailability();
+    const refreshTimer = window.setInterval(refreshAvailability, BOOKING_AVAILABILITY_REFRESH_MS);
+    window.addEventListener('focus', refreshAvailability);
 
     return () => {
-      isActive = false;
+      isMounted = false;
+      window.clearInterval(refreshTimer);
+      window.removeEventListener('focus', refreshAvailability);
     };
-  }, [selectedDate]);
+  }, [refreshStylistAvailability, selectedDate]);
 
   const service = useMemo(() => {
     return services.find((item) => item.id === Number(selectedServiceId));

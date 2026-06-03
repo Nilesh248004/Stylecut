@@ -1,6 +1,7 @@
 import { CalendarDays, Check, Gem, Home, Scissors, Sparkles } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { createBridalRequest } from './api';
+import { playSuccessNoticeSound } from './sounds';
 
 const makeupPackages = [
   {
@@ -52,7 +53,9 @@ function Bridals() {
   const [location, setLocation] = useState('');
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
-  const [requestStatus, setRequestStatus] = useState('');
+  const [requestStatus, setRequestStatus] = useState({ type: '', message: '' });
+  const [confirmedRequest, setConfirmedRequest] = useState(null);
+  const [isSubmittingRequest, setIsSubmittingRequest] = useState(false);
 
   const selectedPackage = useMemo(
     () => makeupPackages.find((item) => item.id === selectedPackageId),
@@ -80,13 +83,20 @@ function Bridals() {
   }
 
   async function handleRequestBooking() {
-    if (!customerName || !customerPhone) {
-      setRequestStatus('Please enter bride name and WhatsApp phone number.');
+    if (isSubmittingRequest || confirmedRequest) {
       return;
     }
 
+    if (!customerName || !customerPhone) {
+      setConfirmedRequest(null);
+      setRequestStatus({ type: 'error', message: 'Please enter bride name and WhatsApp phone number.' });
+      return;
+    }
+
+    setIsSubmittingRequest(true);
+
     try {
-      await createBridalRequest({
+      const createdRequest = await createBridalRequest({
         customerName,
         customerPhone,
         eventDate,
@@ -99,9 +109,20 @@ function Bridals() {
         totalAmount: total
       });
 
-      setRequestStatus('Bridal request sent to barber dashboard.');
-    } catch {
-      setRequestStatus('Could not send request. Please make sure the backend and database are running.');
+      setConfirmedRequest(createdRequest);
+      setRequestStatus({
+        type: 'success',
+        message: `Booking request confirmed for ${selectedPackage.name}. The barber team can now review it.`
+      });
+      playSuccessNoticeSound();
+    } catch (error) {
+      setConfirmedRequest(null);
+      setRequestStatus({
+        type: 'error',
+        message: error.message || 'Could not send request. Please make sure the backend and database are running.'
+      });
+    } finally {
+      setIsSubmittingRequest(false);
     }
   }
 
@@ -292,11 +313,29 @@ function Bridals() {
               <strong>{currency(total)}</strong>
             </div>
 
-            <button className="bridal-book-button" type="button" onClick={handleRequestBooking}>
-              Request Bridal Booking
+            <button
+              className={`bridal-book-button ${confirmedRequest ? 'confirmed' : ''}`}
+              type="button"
+              onClick={handleRequestBooking}
+              disabled={isSubmittingRequest || Boolean(confirmedRequest)}
+            >
+              {isSubmittingRequest ? 'Sending request...' : confirmedRequest ? 'Booking requested' : 'Request Bridal Booking'}
             </button>
 
-            {requestStatus && <p className="bridal-request-status">{requestStatus}</p>}
+            {requestStatus.message && (
+              <div className={`bridal-request-status ${requestStatus.type}`}>
+                {requestStatus.type === 'success' && <Check size={18} />}
+                <div>
+                  <strong>{requestStatus.type === 'success' ? 'Bridal booking succeeded' : 'Booking needs attention'}</strong>
+                  <p>{requestStatus.message}</p>
+                  {confirmedRequest && (
+                    <small>
+                      Request #{confirmedRequest.id} · {customerName} · {currency(total)}
+                    </small>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </aside>
       </section>

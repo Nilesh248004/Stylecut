@@ -9,7 +9,7 @@ import {
   Star,
   UserRound
 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   getClientAppointments,
   getClientFeedback,
@@ -163,6 +163,7 @@ const accountSections = [
   { id: 'feedback', label: 'Feedback', icon: MessageSquareText },
   { id: 'rating', label: 'Rating for Service', icon: Star }
 ];
+const ACCOUNT_REFRESH_MS = 4000;
 
 function Account() {
   const [profile] = useState(readClientProfile);
@@ -177,33 +178,53 @@ function Account() {
   const clientEmail = normalize(profile.email);
   const clientPhone = normalizePhone(profile.phone);
 
-  useEffect(() => {
-    async function loadAccount() {
-      const [appointmentData, orderData] = await Promise.allSettled([
-        getClientAppointments(),
-        getClientProductOrders()
-      ]);
+  const loadAccount = useCallback(async () => {
+    const [appointmentData, orderData] = await Promise.allSettled([
+      getClientAppointments(),
+      getClientProductOrders()
+    ]);
 
-      setAppointments(appointmentData.status === 'fulfilled' ? appointmentData.value : []);
-      setOrders(orderData.status === 'fulfilled' ? orderData.value : []);
-    }
+    if (appointmentData.status === 'fulfilled') setAppointments(appointmentData.value);
+    if (orderData.status === 'fulfilled') setOrders(orderData.value);
+  }, []);
 
-    loadAccount();
+  const loadReviews = useCallback(async () => {
+    const [feedbackData, ratingData] = await Promise.allSettled([
+      getClientFeedback(),
+      getClientRating()
+    ]);
+
+    if (feedbackData.status === 'fulfilled') setFeedbackList(feedbackData.value);
+    if (ratingData.status === 'fulfilled') setRating(ratingData.value?.rating ? Number(ratingData.value.rating) : 0);
   }, []);
 
   useEffect(() => {
-    async function loadReviews() {
-      const [feedbackData, ratingData] = await Promise.allSettled([
-        getClientFeedback(),
-        getClientRating()
-      ]);
+    let isMounted = true;
+    let isRefreshing = false;
 
-      setFeedbackList(feedbackData.status === 'fulfilled' ? feedbackData.value : []);
-      setRating(ratingData.status === 'fulfilled' && ratingData.value?.rating ? Number(ratingData.value.rating) : 0);
+    async function refreshAccount() {
+      if (!isMounted || isRefreshing) {
+        return;
+      }
+
+      isRefreshing = true;
+      try {
+        await Promise.all([loadAccount(), loadReviews()]);
+      } finally {
+        isRefreshing = false;
+      }
     }
 
-    loadReviews();
-  }, []);
+    refreshAccount();
+    const refreshTimer = window.setInterval(refreshAccount, ACCOUNT_REFRESH_MS);
+    window.addEventListener('focus', refreshAccount);
+
+    return () => {
+      isMounted = false;
+      window.clearInterval(refreshTimer);
+      window.removeEventListener('focus', refreshAccount);
+    };
+  }, [loadAccount, loadReviews]);
 
   const clientAppointments = useMemo(() => {
     return appointments.filter((item) => {
