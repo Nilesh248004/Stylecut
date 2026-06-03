@@ -1,0 +1,59 @@
+services:
+  - type: web
+    name: stylecut-api
+    runtime: node
+    buildCommand: npm run build:api
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: DATABASE_SSL
+        value: "true"
+      - key: CLIENT_URLS
+        value: https://stylecut-client.onrender.com,https://stylecut-barber.onrender.com
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: BARBER_STAFF_ID
+        sync: false
+      - key: BARBER_ACCESS_CODE
+        sync: false
+      - key: NOTIFICATION_MODE
+        value: mock
+  - type: web
+    name: stylecut-client
+    runtime: static
+    buildCommand: npm run build:client
+    staticPublishPath: client-frontend/dist
+    envVars:
+      - key: VITE_API_BASE_URL
+        value: https://stylecut-api.onrender.com
+      - key: VITE_DEFAULT_PAGE
+        value: client-auth
+      - key: VITE_GOOGLE_CLIENT_ID
+        sync: false
+      - key: VITE_MERCHANT_UPI_ID
+        sync: false
+      - key: VITE_MERCHANT_NAME
+        value: StyleCut Salon
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+  - type: web
+    name: stylecut-barber
+    runtime: static
+    buildCommand: npm run build:barber
+    staticPublishPath: barber-frontend/dist
+    envVars:
+      - key: VITE_API_BASE_URL
+        value: https://stylecut-api.onrender.com
+      - key: VITE_DEFAULT_PAGE
+        value: barber-auth
+      - key: VITE_GOOGLE_CLIENT_ID
+        sync: false
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html

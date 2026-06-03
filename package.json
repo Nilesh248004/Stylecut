@@ -12,6 +12,10 @@
     "dev:server": "npm run dev --prefix server",
     "stop:ports": "kill-port 5001 5173 5174",
     "install:all": "npm install && npm install --prefix server && npm install --prefix client",
+    "build:client": "npm install --prefix client-frontend && npm run build --prefix client-frontend",
+    "build:barber": "npm install --prefix barber-frontend && npm run build --prefix barber-frontend",
+    "build:api": "npm install --prefix server",
+    "build": "npm install --prefix server && npm install --prefix client && npm run build --prefix client",
     "start": "npm start --prefix server"
   },
   "devDependencies": {

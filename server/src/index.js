@@ -1,11 +1,16 @@
 import cors from 'cors';
 import crypto from 'node:crypto';
+import { existsSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import express from 'express';
 import { config } from './config.js';
 import { query } from './db.js';
 import { sendWhatsAppNotification } from './whatsapp.js';
 
 const app = express();
+const currentDir = dirname(fileURLToPath(import.meta.url));
+const clientDistPath = resolve(currentDir, '../../client/dist');
 const allowedStatuses = new Set(['pending', 'accepted', 'completed', 'cancelled']);
 const stylists = ['Raghul', 'Chang Lee', 'Jason Makki', 'Vasanth', 'Aalim Hakim'];
 const googleJwksUrl = 'https://www.googleapis.com/oauth2/v3/certs';
@@ -1268,9 +1273,24 @@ app.patch('/api/bridal-requests/:id/status', requireBarber, async (req, res, nex
   }
 });
 
-app.use((_req, res) => {
+app.use('/api', (_req, res) => {
   res.status(404).json({ message: 'API route not found.' });
 });
+
+if (existsSync(clientDistPath)) {
+  app.use(express.static(clientDistPath));
+  app.get('*', (_req, res) => {
+    res.sendFile(resolve(clientDistPath, 'index.html'));
+  });
+} else {
+  app.get('/', (_req, res) => {
+    res.json({ status: 'ok', service: 'stylecut-api' });
+  });
+
+  app.use((_req, res) => {
+    res.status(404).json({ message: 'Route not found. Build the client to serve the website from this server.' });
+  });
+}
 
 app.use((error, _req, res, _next) => {
   console.error(error);
