@@ -212,3 +212,25 @@ Sample value: `42`.
 - Browse grooming products with prices and stock status
 - Book appointments with customer details, service, date, and time
 - View backend appointment data through API routes
+
+## DevOps Implementation
+
+This project includes basic DevOps practices to containerize, automate, and prepare the application for deployment.
+
+### DevOps Tools Used
+
+- Docker
+- Docker Compose
+- GitHub Actions CI
+- Render Deployment Configuration
+
+---
+
+## Docker
+
+Docker is used to containerize the StyleCut application so it can run consistently across different environments.
+
+### Build Docker Image
+
+```bash
+docker build -t stylecut .
