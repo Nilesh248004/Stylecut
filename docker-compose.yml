@@ -1,0 +1,15 @@
+services:
+  stylecut:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: stylecut:latest
+    container_name: stylecut-container
+    env_file:
+      - ./server/.env
+    environment:
+      NODE_ENV: production
+      PORT: 5001
+    ports:
+      - "5001:5001"
+    restart: unless-stopped
