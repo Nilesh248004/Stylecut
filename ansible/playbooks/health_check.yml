@@ -1,0 +1,15 @@
+- name: Check Stylecut application health
+  hosts: local
+  gather_facts: false
+
+  tasks:
+    - name: Check Stylecut API health endpoint
+      uri:
+        url: http://localhost:5001/api/health
+        method: GET
+        status_code: 200
+      register: api_health
+
+    - name: Print API health response
+      debug:
+        var: api_health.json

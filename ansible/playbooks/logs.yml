@@ -1,0 +1,14 @@
+- name: Show Stylecut container logs
+  hosts: local
+  gather_facts: false
+
+  tasks:
+    - name: Get latest Docker Compose logs
+      command: docker compose logs --tail=50
+      args:
+        chdir: ../
+      register: app_logs
+
+    - name: Print latest logs
+      debug:
+        var: app_logs.stdout_lines

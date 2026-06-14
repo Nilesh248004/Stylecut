@@ -1,0 +1,19 @@
+- name: Restart Stylecut containers
+  hosts: local
+  gather_facts: false
+
+  tasks:
+    - name: Restart Stylecut using Docker Compose
+      command: docker compose restart
+      args:
+        chdir: ../
+
+    - name: Show container status after restart
+      command: docker compose ps
+      args:
+        chdir: ../
+      register: restart_status
+
+    - name: Print restart status
+      debug:
+        var: restart_status.stdout_lines

@@ -1,0 +1,19 @@
+- name: Deploy Stylecut using Docker Compose
+  hosts: local
+  gather_facts: false
+
+  tasks:
+    - name: Build and start Stylecut containers
+      command: docker compose up -d --build
+      args:
+        chdir: ../
+
+    - name: Show running containers
+      command: docker compose ps
+      args:
+        chdir: ../
+      register: compose_status
+
+    - name: Print container status
+      debug:
+        var: compose_status.stdout_lines

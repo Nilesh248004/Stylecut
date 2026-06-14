@@ -1,0 +1,19 @@
+- name: Stop and remove Stylecut containers
+  hosts: local
+  gather_facts: false
+
+  tasks:
+    - name: Stop and remove containers using Docker Compose
+      command: docker compose down
+      args:
+        chdir: ../
+
+    - name: Show container status after cleanup
+      command: docker compose ps
+      args:
+        chdir: ../
+      register: cleanup_status
+
+    - name: Print cleanup status
+      debug:
+        var: cleanup_status.stdout_lines
